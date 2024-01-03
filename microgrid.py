@@ -7,6 +7,7 @@ import numpy as np
 from scipy.sparse.linalg import spsolve
 from scipy.sparse import csr_matrix
 from matplotlib import pyplot as plt
+import pickle as pkl
 
 def Wind_Sce(Pnom, dist, K1, K2):
   ''' 
@@ -86,15 +87,12 @@ class cigre(object):
                                [1.380,0.082,5.520,0.418,0.18], #(3) SC - 4x16 mm2 Cu
                                [0.871,0.081,3.480,0.409,0.22]])#(4) SC - 4x25 mm2 Cu   
         
-        Demand = np.array([[10,15000.0],
-                        [12,55000.0],
-                        [13,47000.0],
-                        [17,72000.0],
-                        [18,15000.0]])
+        DemandL = np.array([10,12,13,17,18])
+        DemandP = np.array([15000.0,55000.0,47000.0,72000.0,15000.0])
         solar = 1.0
         wind = 2.0
         weibull = 1.0
-        beta = 2.0
+        #beta = 2.0
         normal = 3.0
         # node power Kp Kq Tau type dist K1 K2
         Converters = np.array([[11,30000,0.05,0.04,0.32E-3,solar,normal,900,40],
@@ -105,7 +103,7 @@ class cigre(object):
         #Organizar la estructura
         NumN = np.max([np.max(Lines[:,0]),np.max(Lines[:,1])])+1
         NumL = np.size(Lines[:,0])
-        NumD = np.size(Demand[:,0]) 
+        NumD = np.size(DemandL) 
         NumC = np.size(Converters[:,0])
         Zbase = Vnom*Vnom/Pnom
         Y = 1j*np.zeros((NumN,NumN))
@@ -131,11 +129,11 @@ class cigre(object):
             Yc[n2] = Yc[n2] + b
             
         # Include the demand as constant impedances
-        Demand[:,1] = Demand[:,1]/Pnom
-        Yd = np.zeros((NumN,1))
+        DemandP = DemandP/Pnom
+        Yd = 1j*np.zeros((NumN,1))
         for k in range(NumD):
-            n1 = np.int(Demand[k,0])
-            g = Demand[k,1]
+            n1 = np.int32(DemandL[k])
+            g = DemandP[k]
             Y[n1,n1] = Y[n1,n1] + g
             Yd[n1] = Yd[n1] + g
             
@@ -143,15 +141,17 @@ class cigre(object):
         Converters[:,1] = Converters[:,1]/Pnom
         s = np.zeros((NumN,))
         for k in range(NumC):
-            n1 = np.int(Converters[k,0])
+            n1 = np.int32(Converters[k,0])
             s[n1] = Converters[k,1]
             
-        Yn = csr_matrix(Y[1:,1:])
+        # Yn = csr_matrix(Y[1:,1:]) #Using scipy
+        Yn = Y[1:,1:]
         Y0 = Y[1:,0]
         V  = 1j*np.ones((NumN,))
         er = 1.0
         while er>1E-8:
-            V[1:] = spsolve(Yn,np.conj(s[1:]/V[1:])-Y0*V[0])
+            # V[1:] = spsolve(Yn,np.conj(s[1:]/V[1:])-Y0*V[0]) #using scipy
+            V[1:] = np.linalg.solve(Yn,np.conj(s[1:]/V[1:])-Y0*V[0])
             In = Y@V
             sc = V*np.conj(In)
             er = np.linalg.norm(s[1:]-sc[1:])
@@ -161,7 +161,8 @@ class cigre(object):
         self.NumD = NumD  # Number of loads
         self.NumC = NumC  # Number of converters
         self.lines = mg
-        self.demand = Demand
+        self.demandP = DemandP
+        self.demandL = DemandL
         self.converters = Converters
         self.Ybus = Y
         self.V = V
@@ -171,6 +172,7 @@ class cigre(object):
         self.Yc = Yc
         self.MC = lambda:0 # Easy way to create an object
         self.MC.nd = 100 # Number of samples by default
+        self.savename = 'data'
 
     def Newton_Freq(self, convs):
         # initialization
@@ -245,11 +247,13 @@ class cigre(object):
                 break
         #print(w)
         return w,Vs,P,Q
-
-    def Montecarlo(self,xi,zita,graficar=False, flagres=False):
+    
+    def Montecarlo(self,xi,zita,graficar=False, flagres=False, savedata = False):
         # Frequency variation given by p and q
         nd = self.MC.nd  # Monte Carlo number of iterations
         w = np.zeros((nd,1))
+        mae = np.zeros((nd,1)) #Dynamic Simulation
+        wstd = np.zeros((nd,1)) #Dynamic Simulation
         dv = np.zeros((nd,2))
         dpq = np.zeros((nd,2)) # caching the diference between p_ref and p
         convs = self.converters.copy()
@@ -278,6 +282,52 @@ class cigre(object):
             dv[k,1] = np.max(np.abs(v))
             dpq[k,0] = np.max(np.abs(p[:,0]-convs[:,1]))
             dpq[k,1] = np.max(np.abs(q))
+            mae[k], wstd[k] = self.dynamic_sim(convs)
+        
+        if savedata is True:
+            np.save(self.savename+"_w",w)
+            np.save(self.savename+"_dv",dv)
+            np.save(self.savename+"_dpq",dpq)
+            np.save(self.savename+"_mae",mae)
+            np.save(self.savename+"_wstd",wstd)
+            np.save(self.savename+"_params",np.concatenate((xi, zita)))
+    
+    def Montecarlo_ret(self,xi,zita, graficar=False, flagres=False):
+        #flagres para incluir MAE de la frecuencia en la funcion objetivo
+        # Frequency variation given by p and q
+        nd = self.MC.nd  # Monte Carlo number of iterations
+        w = np.zeros((nd,1)) #Newton
+        mae = np.zeros((nd,1)) #Dynamic Simulation
+        wstd = np.zeros((nd,1)) #Dynamic Simulation
+        dv = np.zeros((nd,2))
+        dpq = np.zeros((nd,2)) # caching the diference between p_ref and p
+        convs = self.converters.copy()
+        convs[:,2] = xi 
+        convs[:,3] = zita
+        solar = 1.0
+        wind = 2.0
+        #demand = self.demand.copy()
+        for k in range(nd):
+            #demand[:,1]= self.demand[:,1]*np.random.rand(self.NumD)*10  # Demands are uniform distributed
+            for c in range(self.NumC):
+                Pnom = self.converters[c,1]
+                dist = self.converters[c,6]
+                K1 = self.converters[c,7]
+                K2 = self.converters[c,8]
+                if (self.converters[c,5] == solar):
+                    convs[c,1] = Solar_Sce(Pnom,dist,K1,K2)
+                    #print('Solar: ',convs[c,1])
+                    
+                if (self.converters[c,5] == wind):
+                    convs[c,1] = Wind_Sce(Pnom,dist,K1,K2)
+                    #print('Wind: ',convs[c,1])
+                    
+            w[k],v,p,q = self.Newton_Freq(convs)
+            dv[k,0] = np.min(np.abs(v))
+            dv[k,1] = np.max(np.abs(v))
+            dpq[k,0] = np.max(np.abs(p[:,0]-convs[:,1]))
+            dpq[k,1] = np.max(np.abs(q))
+            mae[k], wstd[k] = self.dynamic_sim(convs)
         
         if graficar is True:
             fig01 = plt.figure()
@@ -299,8 +349,7 @@ class cigre(object):
             ax032.hist(dv[:,1],30)
             ax032.grid()
             ax032.set_title('$v_{max}$')
-
-
+        
         # results on w
         self.MC.mu_w = np.mean(w)
         self.MC.sigma_w = np.std(w)
@@ -330,11 +379,24 @@ class cigre(object):
         self.resTol = self.MC.var_pos_w+self.MC.var_neg_w+self.MC.var_pos_v+\
                       self.MC.var_neg_v+self.MC.var_dq+self.MC.var_dp 
 
-        # Standar Deviation
+        # Standar 
         self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
                    np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
                    np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.)
 
+        #self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
+        #           np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
+        #           np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(mae)/nd + np.sum(wstd)/nd
+        
+        #self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
+        #            np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
+        #            np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(np.square(mae))/nd + np.sum(np.square(wstd))/nd
+        
+        if np.isnan(self.resDev):
+            self.resDev = np.inf
+            print('Infinito')
+            
+        #print(self.resDev)
         #  self.res = np.max(w, initial = 1.0)-np.min(w,initial = 1.0) +\
         #             np.max(dv[:,1], initial = 1.0)-np.min(dv[:,0],initial = 1.0) +\
         #             np.max(dpq[:,0],initial = 0.5)+np.max(dpq[:,1],initial = 0.5)-1.0
@@ -343,14 +405,103 @@ class cigre(object):
             self.res = self.resTol
         else:
             self.res = self.resDev
+        print(self.res)
+    
+    def dynamic_sim(self, convs, dt=5e-5, fp=0.7, nd = 500, pw_flag=False):
+        
+        xi = convs[:,2]
+        zita = convs[:,3]
+        
+        xi = xi.reshape(xi.size,1)
+        zita = zita.reshape(zita.size,1)
+        
+        Ydb = self.Yd*(1./fp*np.exp(1j*np.arccos(fp)))
+        wbase = 2*np.pi*50
+        N = np.int_(convs[:,0])
+        tau = (convs[:,4])[:, np.newaxis]
+        S = np.int_(np.setdiff1d(np.arange(self.NumN),N))
+        n = N.size
+        V = np.ones((n,1))
+        w0 = 1.0
+        Pref = (convs[:,1])[:,np.newaxis]
+        Qref = np.zeros((n,1))
+        v0 = np.ones((n,1))
+        th = np.zeros((n,1))
+        p  = Pref
+        q  = Qref
+        gr_wci = np.zeros((nd,1))
+        t = np.zeros((nd,1))
+        gr_w = np.zeros((nd,n))
+        gr_p = np.zeros((nd,n))
+        gr_th = np.zeros((nd,n))
+        gr_v = np.zeros((nd,n))
+        gr_y = np.ones((nd,1))
+        wci = 1.0
+        for k in range(0,nd):
+            ylin = np.diag(1./(np.real(self.zlin[:,0])+wci*np.imag(self.zlin[:,0])*1j))
+            Yd = np.real(Ydb) + wci*1j*np.imag(Ydb)
+            Yb = self.A.T@ylin@self.A + np.diag(Yd[:,0]) + np.diag(self.Yc[:,0]*wci)
+            Y = Yb[np.ix_(N,N)] - Yb[np.ix_(N,S)]@np.linalg.solve(Yb[np.ix_(S,S)],Yb[np.ix_(S,N)])
+            In = Y@V
+            Sn = V*np.conj(In)
+            P = np.real(Sn)
+            Q = np.imag(Sn)
+            dp = (P-p)/tau
+            dq = (Q-q)/tau        
+            w = (Pref-p)*xi + w0
+            wci = np.sum(1./xi*w)/np.sum(1./xi)
+            dth = wbase*(w-wci)
+            t[k] = k*dt
+            th = th + dth*dt
+            p  = p + dp*dt
+            q  = q + dq*dt
+            th_ci = np.sum(th/xi)/np.sum(1./xi)
+            th = th-th_ci
+            Vn = (Qref-q)*zita + v0
+            V = Vn*np.exp(1j*th)
+            gr_w[k,:] = w[:,0]
+            gr_p[k,:] = p[:,0]
+            gr_th[k,:] = th[:,0]
+            gr_v[k,:] = Vn[:,0]
+            gr_wci[k] = wci
+            gr_y[k] = np.linalg.norm(Y)
+        
+        
+        mae = np.mean(np.abs(gr_w.T-gr_w[-1,:].reshape((n,1)) ))
+        stdw = np.std(gr_w[-1,:])
+        if pw_flag:
+            fig01 = plt.figure()
+            ax01 = fig01.add_subplot(1, 1, 1) 
+            #plt.plot(t[nd-50:],gr_w[nd-50:])
+            plt.plot(t, gr_w)
+        return mae, stdw
 
 
 
 if __name__ == "__main__":
     mg = cigre()
+    
     #xi = 0.05 + 0.15*np.ones((1,5)) #np.random.rand(1,5)
     #zita = 0.05 + 0.15*np.ones((1,5)) #np.random.rand(1,5)
-    xi = np.array([[0.0636,0.0806,0.0639,0.0762,0.1425]])
-    zita = np.array([[0.4596,0.2963,0.2338,0.4481,0.4753]])
-    mg.MC.nd = np.int(1e4) #Sample Size
-    mg.Montecarlo(xi, zita, True, True)
+    
+    #xi = np.array([0.0636,0.0806,0.0639,0.0762,0.1425]) #[:, np.newaxis]
+    #zita = np.array([0.4596,0.2963,0.2338,0.4481,0.4753]) #[:, np.newaxis]
+    
+    #EI Mejor solucion nueva
+    xi = np.array([[0.07081114, 0.05752451, 0.09      , 0.03156643, 0.001]])
+    zita = np.array([[0.07616618, 0.05070537, 0.04103928, 0.0733476 , 0.40170806]])
+    
+    #EI mejor solucion anterior
+    #xi = np.array([0.001, 0.001, 0.001, 0.001, 0.001])
+    #zita = np.array([0.4163801, 0.42528988, 0.42507371, 0.29574472, 0.11045697])
+    
+    #xi = 0.08 + 0.01*np.random.rand(1,5)
+    #zita = 0.5 + 0.01*np.random.rand(1,5)
+    
+    mg.MC.nd = np.int32(500) #Sample Size
+    mg.Montecarlo_ret(xi, zita, True, True)
+    
+    mg.converters[:,2] = xi
+    mg.converters[:,3] = zita
+    mae, stdw =mg.dynamic_sim(mg.converters, pw_flag=True)
+    #print(mae, stdw)

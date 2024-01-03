@@ -9,24 +9,20 @@ from microgrid import cigre
 
 
 mg = cigre()
-#xi = 0.05 + 0.15*np.ones((1,5)) #np.random.rand(1,5)
-#zita = 0.05 + 0.15*np.ones((1,5)) #np.random.rand(1,5)
-xi = np.array([[0.0636,0.0806,0.0639,0.0762,0.1425]])
-zita = np.array([[0.4596,0.2963,0.2338,0.4481,0.4753]])
-mg.MC.nd = np.int(1e4) #Cantidad de muestras
+mg.MC.nd = np.int32(1e3) #Cantidad de muestras
 
 def objfun(x):
     x = np.reshape(x, (1,10))
     xi = x[0,:5].reshape((1,5))
     zita = x[0,5:].reshape((1,5))
-    mg.Montecarlo(xi, zita, False, False)
-    return mg.res
+    mg.Montecarlo_ret(xi, zita, False, False)
+    return mg.resDev
 
 # and compute a baseline to beat with hyperparameter optimization 
-bounds = [ (0.05,0.5) for _ in range(10) ]
+bounds = [ (1e-7,0.15) for _ in range(10) ]
 
 from skopt import gp_minimize
-# https://scikit-optimize.github.io/stable/modules/generated/skopt.gp_minimize.html
+# https://scikit-optimize.github.io/st8able/modules/generated/skopt.gp_minimize.html
 # We can build the surrogate model using
 # GP: Gaussian Process
 # RF: Random Forest
@@ -37,18 +33,19 @@ max_iter = 30
 BestSol = []
 BestVal = []
 Results = []
+# seed: EI - 0, LCB-10, PI-20 
 for i in range(10):
-    print(i)
+    print('Iteration ',i)
     cigre_opt = gp_minimize(objfun,      # the function to minimize
                             bounds,      # the bounds on each dimension of x
                             acq_func="LCB",      # the acquisition function
                             n_calls=max_iter,         # the number of evaluations of f
                             n_random_starts=3,  # the number of random initialization points
-                            random_state=i,
+                            random_state=i+10,
                             noise="gaussian")   # the random seed
     Results.append(cigre_opt['func_vals'])
     BestSol.append(cigre_opt['x'])
     BestVal.append(cigre_opt['fun'])
-np.save('Results_BO_SK_LCB_STD_2',Results)
-np.save('BestVal_BO_SK_LCB_STD_2',BestVal)
-np.save('BestSol_BO_SK_LCB_STD_2',BestSol)
+np.save('Results_BO_SK_LCB_STD',Results)
+np.save('BestVal_BO_SK_LCB_STD',BestVal)
+np.save('BestSol_BO_SK_LCb_STD',BestSol)

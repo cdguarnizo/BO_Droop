@@ -13,7 +13,7 @@ mg = cigre()
 #zita = 0.05 + 0.15*np.ones((1,5)) #np.random.rand(1,5)
 xi = np.array([[0.0636,0.0806,0.0639,0.0762,0.1425]])
 zita = np.array([[0.4596,0.2963,0.2338,0.4481,0.4753]])
-mg.MC.nd = np.int(1e4) #Monte Carlo's sample size
+mg.MC.nd = np.int(5000) #Monte Carlo's sample size
 
 import GPyOpt
 # https://nbviewer.jupyter.org/github/SheffieldML/GPyOpt/blob/master/manual/index.ipynb
@@ -21,10 +21,10 @@ import GPyOpt
 def objfun(x):
     xi = x[0,:5].reshape((1,5))
     zita = x[0,5:].reshape((1,5))
-    mg.Montecarlo(xi, zita, False, False)
+    mg.Montecarlo_ret(xi, zita, False, False)
     return mg.res
 
-bound = (0.05,0.5)
+boundxi = (0.05,0.5)
 bounds =[{'name': 'var_1', 'type': 'continuous', 'domain': bound},
      {'name': 'var_2', 'type': 'continuous', 'domain': bound},
      {'name': 'var_3', 'type': 'continuous', 'domain': bound},
@@ -36,7 +36,7 @@ bounds =[{'name': 'var_1', 'type': 'continuous', 'domain': bound},
      {'name': 'var_9', 'type': 'continuous', 'domain': bound},
      {'name': 'var_10', 'type': 'continuous', 'domain': bound}]
 
-max_iter = 30
+max_iter = 100
 BestSol = []
 BestVal = []
 Results = []
