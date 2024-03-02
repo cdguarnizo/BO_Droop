@@ -9,26 +9,38 @@ from scipy.sparse import csr_matrix
 from matplotlib import pyplot as plt
 import pickle as pkl
 
+
+def EV_Demand(nEV):
+  ''' 
+  Electric Vehicle stochastic demand generation.
+  '''
+  nEV_val = np.array([10.0, 20.0, 30.0]) #Number of Vehicles
+  idx = np.where(nEV_val == nEV)[0]
+  shape = [2.2784,3.71581,5.15059] #Gamma's shape parameter
+  scale = [103.043,110.621,133.027] #Gamma's scale parameter
+  return -np.random.gamma(shape[idx],scale=scale[idx])/10000 #EV demand in W
+
 def Wind_Sce(Pnom, dist, K1, K2):
   ''' 
   Wind Generation scenario assumming a normal, Weibull or beta distributions, 
   with parameters K1 and K2.
   '''
+  # TODO uptade paremeters according to footnote
   weibull = 1.0
   beta = 2.0
   normal = 3.0
   if (dist == weibull):    
-    v = (-K1*np.log(1.-np.random.rand()))**(1.0/K2)        
-  
-  if (dist == beta):
-    v  = np.nan
+    #v = (-K1*np.log(1.-np.random.rand()))**(1.0/K2)        
+    v = K1*np.random.weibull(K2)
   
   if (dist == normal):
      v = (K1+np.random.randn()*K2)  
      
-  P = 0. 
-  if (v<=12.):
-      P = Pnom*(v/12.)**3
+  P = 0.
+  if (v<3.5 or v>20.):
+      P = 0 
+  elif (v<=14.5 and v>=3.5):
+      P = Pnom*(v-3.5)/11.
   else:
       P = Pnom
   return P
@@ -39,6 +51,7 @@ def Solar_Sce(Pnom, dist, K1, K2):
   with parameters K1 and K2.  Nominal radiation scenario 1000 W/m^2  
   which represents a nomila power Pnom.
   '''
+  # TODO buscar articulo con granjas de paneles para incluir en la simulacion
   weibull = 1.0
   beta = 2.0
   normal = 3.0
@@ -50,7 +63,9 @@ def Solar_Sce(Pnom, dist, K1, K2):
     else:
         P = Pnom
   if (dist == beta):
-    P  = np.nan
+    A, eta = 7000, 15
+    s = np.random.beta(K1,K2)
+    P = (eta*A*s)/100000*Pnom
 
   if (dist == normal):
       P = (K1+np.random.randn()*K2)/1000*Pnom  
@@ -61,7 +76,7 @@ class cigre(object):
     def __init__(self):
         Vnom = 400 # Line to Line voltage in volts
         wnom = 2.*np.pi*60. # Nominal angular velocity
-        Pnom = 100000 # Nominal power in watts
+        Pnom = 10000 # Nominal power in watts
         # N1 N2 L(m) type 
         Lines = np.array([[0,1,35,0],
                        [1,2,35,0],
@@ -88,18 +103,19 @@ class cigre(object):
                                [0.871,0.081,3.480,0.409,0.22]])#(4) SC - 4x25 mm2 Cu   
         
         DemandL = np.array([10,12,13,17,18])
-        DemandP = np.array([15000.0,55000.0,47000.0,72000.0,15000.0])
+        DemandP = np.array([15000.0,55000.0,47000.0,72000.0,15000.0])/10.0
         solar = 1.0
         wind = 2.0
+        EV = 3.0
         weibull = 1.0
         #beta = 2.0
         normal = 3.0
         # node power Kp Kq Tau type dist K1 K2
-        Converters = np.array([[11,30000,0.05,0.04,0.32E-3,solar,normal,900,40],
-                            [12,10000,0.08,0.09,0.38E-3,solar,normal,900,40],
-                            [13,10000,0.10,0.09,0.41E-3,wind,weibull,11,1.2],
-                            [17,30000,0.09,0.10,0.31E-3,solar,normal,900,40],
-                            [18,10000,0.08,0.08,0.34E-3,wind,weibull,11,1.2]])
+        Converters = np.array([[11,3000,0.05,0.04,0.32E-3,EV,10.0,900,40],
+                            [12,Pnom,0.08,0.09,0.38E-3,solar,normal,900,40],
+                            [13,2000,0.10,0.09,0.41E-3,wind,weibull,11,1.2],
+                            [17,Pnom,0.09,0.10,0.31E-3,solar,normal,900,40],
+                            [18,2000,0.08,0.08,0.34E-3,wind,weibull,11,1.2]])
         #Organizar la estructura
         NumN = np.max([np.max(Lines[:,0]),np.max(Lines[:,1])])+1
         NumL = np.size(Lines[:,0])
@@ -243,10 +259,8 @@ class cigre(object):
             Vn = Vn + dX[n:2*n]
             w  = w + dX[-1]
             if er<1E-8:
-                #print(w)
                 break
-        #print(w)
-        return w,Vs,P,Q
+        return w,Vs,P,Q,I
     
     def Montecarlo(self,xi,zita,graficar=False, flagres=False, savedata = False):
         # Frequency variation given by p and q
@@ -261,9 +275,19 @@ class cigre(object):
         convs[:,3] = zita
         solar = 1.0
         wind = 2.0
+        EV = 3.0            
         #demand = self.demand.copy()
         for k in range(nd):
             #demand[:,1]= self.demand[:,1]*np.random.rand(self.NumD)*10  # Demands are uniform distributed
+            
+            Yd = 1j*np.zeros((self.NumN,1))
+            for k in range(self.NumD):
+                # TODO: check -> Reactive power is not considered
+                n1 = np.int32(self.demandL[k]) #node number
+                g =  self.demandP[k] + 0.05*self.demandP[k]*np.random.randn()  # Demand value
+                Yd[n1] = Yd[n1] + g
+            self.Yd = Yd
+            
             for c in range(self.NumC):
                 Pnom = self.converters[c,1]
                 dist = self.converters[c,6]
@@ -276,13 +300,16 @@ class cigre(object):
                 if (self.converters[c,5] == wind):
                     convs[c,1] = Wind_Sce(Pnom,dist,K1,K2)
                     #print('Wind: ',convs[c,1])
-                    
-            w[k],v,p,q = self.Newton_Freq(convs)
+            
+                if (self.converters[c,5] == EV):
+                    convs[c,1] = EV_Demand(dist)
+ 
+            w[k],v,p,q,i = self.Newton_Freq(convs)
             dv[k,0] = np.min(np.abs(v))
             dv[k,1] = np.max(np.abs(v))
             dpq[k,0] = np.max(np.abs(p[:,0]-convs[:,1]))
             dpq[k,1] = np.max(np.abs(q))
-            mae[k], wstd[k] = self.dynamic_sim(convs)
+            #mae[k], wstd[k] = self.dynamic_sim(convs)
         
         if savedata is True:
             np.save(self.savename+"_w",w)
@@ -300,6 +327,7 @@ class cigre(object):
         mae = np.zeros((nd,1)) #Dynamic Simulation
         wstd = np.zeros((nd,1)) #Dynamic Simulation
         dv = np.zeros((nd,2))
+        imax = np.zeros((nd,1))
         dpq = np.zeros((nd,2)) # caching the diference between p_ref and p
         convs = self.converters.copy()
         convs[:,2] = xi 
@@ -309,6 +337,15 @@ class cigre(object):
         #demand = self.demand.copy()
         for k in range(nd):
             #demand[:,1]= self.demand[:,1]*np.random.rand(self.NumD)*10  # Demands are uniform distributed
+            
+            Yd = 1j*np.zeros((self.NumN,1))
+            for k in range(self.NumD):
+                # TODO: check -> Reactive power is not considered
+                n1 = np.int32(self.demandL[k]) #node number
+                g =  self.demandP[k] + 0.05*self.demandP[k]*np.random.randn()  # Demand value
+                Yd[n1] = Yd[n1] + g
+            self.Yd = Yd
+            
             for c in range(self.NumC):
                 Pnom = self.converters[c,1]
                 dist = self.converters[c,6]
@@ -322,12 +359,14 @@ class cigre(object):
                     convs[c,1] = Wind_Sce(Pnom,dist,K1,K2)
                     #print('Wind: ',convs[c,1])
                     
-            w[k],v,p,q = self.Newton_Freq(convs)
+            w[k],v,p,q,i = self.Newton_Freq(convs)
             dv[k,0] = np.min(np.abs(v))
             dv[k,1] = np.max(np.abs(v))
+            print(np.max(np.abs(i)))
+            imax[k] = np.max(np.abs(i))
             dpq[k,0] = np.max(np.abs(p[:,0]-convs[:,1]))
             dpq[k,1] = np.max(np.abs(q))
-            mae[k], wstd[k] = self.dynamic_sim(convs)
+            #mae[k], wstd[k] = self.dynamic_sim(convs)
         
         if graficar is True:
             fig01 = plt.figure()
@@ -382,8 +421,8 @@ class cigre(object):
         # Standar 
         self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
                    np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
-                   np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.)
-
+                   np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(np.square(imax))/(imax.shape[0]-1.)
+        print('Corriente',np.max(imax))
         #self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
         #           np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
         #           np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(mae)/nd + np.sum(wstd)/nd
@@ -392,6 +431,7 @@ class cigre(object):
         #            np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
         #            np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(np.square(mae))/nd + np.sum(np.square(wstd))/nd
         
+        print('Funcion objetivo:',self.resDev)
         if np.isnan(self.resDev):
             self.resDev = np.inf
             print('Infinito')
@@ -405,7 +445,7 @@ class cigre(object):
             self.res = self.resTol
         else:
             self.res = self.resDev
-        print(self.res)
+        
     
     def dynamic_sim(self, convs, dt=5e-5, fp=0.7, nd = 500, pw_flag=False):
         
@@ -443,6 +483,7 @@ class cigre(object):
             Yb = self.A.T@ylin@self.A + np.diag(Yd[:,0]) + np.diag(self.Yc[:,0]*wci)
             Y = Yb[np.ix_(N,N)] - Yb[np.ix_(N,S)]@np.linalg.solve(Yb[np.ix_(S,S)],Yb[np.ix_(S,N)])
             In = Y@V
+            print(np.max(np.abs(In)))
             Sn = V*np.conj(In)
             P = np.real(Sn)
             Q = np.imag(Sn)
@@ -501,7 +542,7 @@ if __name__ == "__main__":
     mg.MC.nd = np.int32(500) #Sample Size
     mg.Montecarlo_ret(xi, zita, True, True)
     
-    mg.converters[:,2] = xi
-    mg.converters[:,3] = zita
-    mae, stdw =mg.dynamic_sim(mg.converters, pw_flag=True)
+    #mg.converters[:,2] = xi
+    #mg.converters[:,3] = zita
+    #mae, stdw =mg.dynamic_sim(mg.converters, pw_flag=True)
     #print(mae, stdw)
