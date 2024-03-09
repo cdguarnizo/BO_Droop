@@ -362,7 +362,7 @@ class cigre(object):
             w[k],v,p,q,i = self.Newton_Freq(convs)
             dv[k,0] = np.min(np.abs(v))
             dv[k,1] = np.max(np.abs(v))
-            print(np.max(np.abs(i)))
+            #print(np.max(np.abs(i)))
             imax[k] = np.max(np.abs(i))
             dpq[k,0] = np.max(np.abs(p[:,0]-convs[:,1]))
             dpq[k,1] = np.max(np.abs(q))
@@ -388,7 +388,17 @@ class cigre(object):
             ax032.hist(dv[:,1],30)
             ax032.grid()
             ax032.set_title('$v_{max}$')
-        
+            
+            fig04 = plt.figure()
+            ax04 = fig04.add_subplot(1, 1, 1) 
+            plt.hist(imax,30)
+            ax04.grid()
+            ax04.set_title('$imax$')
+
+            fig01.savefig('omega.pdf',dpi=200)
+            fig02.savefig('dpq.pdf',dpi=200)
+            fig03.savefig('dv.pdf',dpi=200)
+            fig04.savefig('imax.pdf',dpi=200)
         # results on w
         self.MC.mu_w = np.mean(w)
         self.MC.sigma_w = np.std(w)
@@ -421,8 +431,8 @@ class cigre(object):
         # Standar 
         self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
                    np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
-                   np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(np.square(imax))/(imax.shape[0]-1.)
-        print('Corriente',np.max(imax))
+                   np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) #+ np.sum(np.square(imax))/(imax.shape[0]-1.)
+        #print('Corriente',np.max(imax))
         #self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
         #           np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
         #           np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(mae)/nd + np.sum(wstd)/nd
