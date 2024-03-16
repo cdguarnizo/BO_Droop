@@ -281,10 +281,10 @@ class cigre(object):
             #demand[:,1]= self.demand[:,1]*np.random.rand(self.NumD)*10  # Demands are uniform distributed
             
             Yd = 1j*np.zeros((self.NumN,1))
-            for k in range(self.NumD):
+            for n in range(self.NumD):
                 # TODO: check -> Reactive power is not considered
-                n1 = np.int32(self.demandL[k]) #node number
-                g =  self.demandP[k] + 0.05*self.demandP[k]*np.random.randn()  # Demand value
+                n1 = np.int32(self.demandL[n]) #node number
+                g =  self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
                 Yd[n1] = Yd[n1] + g
             self.Yd = Yd
             
@@ -339,10 +339,10 @@ class cigre(object):
             #demand[:,1]= self.demand[:,1]*np.random.rand(self.NumD)*10  # Demands are uniform distributed
             
             Yd = 1j*np.zeros((self.NumN,1))
-            for k in range(self.NumD):
+            for n in range(self.NumD):
                 # TODO: check -> Reactive power is not considered
-                n1 = np.int32(self.demandL[k]) #node number
-                g =  self.demandP[k] + 0.05*self.demandP[k]*np.random.randn()  # Demand value
+                n1 = np.int32(self.demandL[n]) #node number
+                g =  self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
                 Yd[n1] = Yd[n1] + g
             self.Yd = Yd
             
@@ -431,7 +431,8 @@ class cigre(object):
         # Standar 
         self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
                    np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
-                   np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) #+ np.sum(np.square(imax))/(imax.shape[0]-1.)
+                   np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(np.square(imax))/(imax.shape[0]-1.)
+        
         #print('Corriente',np.max(imax))
         #self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
         #           np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
