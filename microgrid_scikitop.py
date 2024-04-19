@@ -30,22 +30,28 @@ from skopt import gp_minimize
 # GBR: GradientBoostingRegressor
    
 max_iter = 30
-BestSol = []
-BestVal = []
-Results = []
 # seed: EI - 0, LCB-10, PI-20 
-for i in range(10):
-    print('Iteration ',i)
-    cigre_opt = gp_minimize(objfun,      # the function to minimize
-                            bounds,      # the bounds on each dimension of x
-                            acq_func="LCB",      # the acquisition function
-                            n_calls=max_iter,         # the number of evaluations of f
-                            n_random_starts=3,  # the number of random initialization points
-                            random_state=i+10,
-                            noise="gaussian")   # the random seed
-    Results.append(cigre_opt['func_vals'])
-    BestSol.append(cigre_opt['x'])
-    BestVal.append(cigre_opt['fun'])
-np.save('Results_BO_SK_LCB_STD',Results)
-np.save('BestVal_BO_SK_LCB_STD',BestVal)
-np.save('BestSol_BO_SK_LCb_STD',BestSol)
+#x =  (0.15-1e-7)*np.random.rand(10) + 1e-7
+#objfun(x)
+names = ['EI','LCB','PI']
+iterations = [0,10,20]
+for name,itera in zip(names,iterations):
+    BestSol = []
+    BestVal = []
+    Results = []
+    print(name, itera)
+    for i in range(10):
+        print('Iteration ',i)
+        cigre_opt = gp_minimize(objfun,      # the function to minimize
+                                bounds,      # the bounds on each dimension of x
+                                acq_func="EI",      # the acquisition function
+                                n_calls=max_iter,         # the number of evaluations of f
+                                n_random_starts=3,  # the number of random initialization points
+                                random_state=i+itera,
+                                noise="gaussian")   # the random seed
+        Results.append(cigre_opt['func_vals'])
+        BestSol.append(cigre_opt['x'])
+        BestVal.append(cigre_opt['fun'])
+    np.save('Results_BO_SK_'+name+'_EV5',Results)
+    np.save('BestVal_BO_SK_'+name+'_STD_EV5',BestVal)
+    np.save('BestSol_BO_SK_'+name+'_STD_EV5',BestSol)

@@ -15,7 +15,7 @@ def EV_Demand(nEV):
   Electric Vehicle stochastic demand generation.
   '''
   nEV_val = np.array([10.0, 20.0, 30.0]) #Number of Vehicles
-  idx = np.where(nEV_val == nEV)[0]
+  idx = np.where(nEV_val == nEV)[0][0]
   shape = [2.2784,3.71581,5.15059] #Gamma's shape parameter
   scale = [103.043,110.621,133.027] #Gamma's scale parameter
   return -np.random.gamma(shape[idx],scale=scale[idx])/10000 #EV demand in W
@@ -193,7 +193,7 @@ class cigre(object):
     def Newton_Freq(self, convs):
         # initialization
         w = 1.0
-        Vn = np.ones((5,1))
+        Vn = np.ones((5,1)) #TODO: no puede ser 5 debe depender de algo
         an = np.zeros((5,1))
 
         xi = np.expand_dims(convs[:,2], axis=1)
@@ -260,18 +260,19 @@ class cigre(object):
             w  = w + dX[-1]
             if er<1E-8:
                 break
-        return w,Vs,P,Q,I
+        return w,Vs,P,Q,I,np.sum(P)-np.sum(self.g)
     
     def Montecarlo(self,xi,zita,graficar=False, flagres=False, savedata = False):
         # Frequency variation given by p and q
         nd = self.MC.nd  # Monte Carlo number of iterations
         w = np.zeros((nd,1))
+        dp = np.zeros((nd,1))
         mae = np.zeros((nd,1)) #Dynamic Simulation
         wstd = np.zeros((nd,1)) #Dynamic Simulation
         dv = np.zeros((nd,2))
         dpq = np.zeros((nd,2)) # caching the diference between p_ref and p
         convs = self.converters.copy()
-        convs[:,2] = xi 
+        convs[:,2] = xi
         convs[:,3] = zita
         solar = 1.0
         wind = 2.0
@@ -281,11 +282,13 @@ class cigre(object):
             #demand[:,1]= self.demand[:,1]*np.random.rand(self.NumD)*10  # Demands are uniform distributed
             
             Yd = 1j*np.zeros((self.NumN,1))
-            for n in range(self.NumD):
+            g = np.zeros((self.NumD,1))
+            for k in range(self.NumD):
                 # TODO: check -> Reactive power is not considered
-                n1 = np.int32(self.demandL[n]) #node number
-                g =  self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
-                Yd[n1] = Yd[n1] + g
+                n1 = np.int32(self.demandL[k]) #node number
+                g[k] =  self.demandP[k] + 0.05*self.demandP[k]*np.random.randn()  # Demand value
+                Yd[n1] = Yd[n1] + g[k]
+            self.g = g
             self.Yd = Yd
             
             for c in range(self.NumC):
@@ -304,7 +307,7 @@ class cigre(object):
                 if (self.converters[c,5] == EV):
                     convs[c,1] = EV_Demand(dist)
  
-            w[k],v,p,q,i = self.Newton_Freq(convs)
+            w[k],v,p,q,i,dp[k] = self.Newton_Freq(convs)
             dv[k,0] = np.min(np.abs(v))
             dv[k,1] = np.max(np.abs(v))
             dpq[k,0] = np.max(np.abs(p[:,0]-convs[:,1]))
@@ -324,6 +327,7 @@ class cigre(object):
         # Frequency variation given by p and q
         nd = self.MC.nd  # Monte Carlo number of iterations
         w = np.zeros((nd,1)) #Newton
+        dp = np.zeros((nd,1))
         mae = np.zeros((nd,1)) #Dynamic Simulation
         wstd = np.zeros((nd,1)) #Dynamic Simulation
         dv = np.zeros((nd,2))
@@ -334,16 +338,19 @@ class cigre(object):
         convs[:,3] = zita
         solar = 1.0
         wind = 2.0
+        EV = 3.0  
         #demand = self.demand.copy()
         for k in range(nd):
             #demand[:,1]= self.demand[:,1]*np.random.rand(self.NumD)*10  # Demands are uniform distributed
             
             Yd = 1j*np.zeros((self.NumN,1))
-            for n in range(self.NumD):
+            g = np.zeros((self.NumD,1))
+            for k in range(self.NumD):
                 # TODO: check -> Reactive power is not considered
-                n1 = np.int32(self.demandL[n]) #node number
-                g =  self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
-                Yd[n1] = Yd[n1] + g
+                n1 = np.int32(self.demandL[k]) #node number
+                g[k] =  self.demandP[k] + 0.05*self.demandP[k]*np.random.randn()  # Demand value
+                Yd[n1] = Yd[n1] + g[k]
+            self.g = g
             self.Yd = Yd
             
             for c in range(self.NumC):
@@ -358,8 +365,11 @@ class cigre(object):
                 if (self.converters[c,5] == wind):
                     convs[c,1] = Wind_Sce(Pnom,dist,K1,K2)
                     #print('Wind: ',convs[c,1])
-                    
-            w[k],v,p,q,i = self.Newton_Freq(convs)
+                
+                if (self.converters[c,5] == EV):
+                    convs[c,1] = EV_Demand(dist)
+
+            w[k],v,p,q,i,dp[k] = self.Newton_Freq(convs)
             dv[k,0] = np.min(np.abs(v))
             dv[k,1] = np.max(np.abs(v))
             #print(np.max(np.abs(i)))
@@ -388,17 +398,7 @@ class cigre(object):
             ax032.hist(dv[:,1],30)
             ax032.grid()
             ax032.set_title('$v_{max}$')
-            
-            fig04 = plt.figure()
-            ax04 = fig04.add_subplot(1, 1, 1) 
-            plt.hist(imax,30)
-            ax04.grid()
-            ax04.set_title('$imax$')
-
-            fig01.savefig('omega.pdf',dpi=200)
-            fig02.savefig('dpq.pdf',dpi=200)
-            fig03.savefig('dv.pdf',dpi=200)
-            fig04.savefig('imax.pdf',dpi=200)
+        
         # results on w
         self.MC.mu_w = np.mean(w)
         self.MC.sigma_w = np.std(w)
@@ -424,12 +424,16 @@ class cigre(object):
         # results on delta_q  % deviations larger than 0.5
         a = np.where(dpq[:,1]>0.5)
         self.MC.var_dq = np.size(a)/nd
-    
+
+
         self.resTol = self.MC.var_pos_w+self.MC.var_neg_w+self.MC.var_pos_v+\
                       self.MC.var_neg_v+self.MC.var_dq+self.MC.var_dp 
-
+        
+        # store losses
+        #self.dp = np.mean(dp)
+        #print(np.min(dp), np.max(dp))
         # Standar 
-        self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
+        self.resDev = np.mean(dp) + np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
                    np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
                    np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(np.square(imax))/(imax.shape[0]-1.)
         
