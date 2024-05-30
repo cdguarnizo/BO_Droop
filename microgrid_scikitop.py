@@ -5,21 +5,23 @@ CIGRE microgrid benchmark
 @author: cdgua
 """
 import numpy as np
-from microgrid import cigre
+import os
+from microgrid import mgrid
 
-
-mg = cigre()
+mg = mgrid()
+mg.microgrid1()
 mg.MC.nd = np.int32(1e3) #Cantidad de muestras
+npar = 3
 
 def objfun(x):
-    x = np.reshape(x, (1,10))
-    xi = x[0,:5].reshape((1,5))
-    zita = x[0,5:].reshape((1,5))
-    mg.Montecarlo_ret(xi, zita, False, False)
+    x = np.reshape(x, (1,2*npar))
+    xi = x[0,:npar].reshape((1,npar))
+    zita = x[0,npar:].reshape((1,npar))
+    mg.Montecarlo(xi, zita, False, False)
     return mg.resDev
 
 # and compute a baseline to beat with hyperparameter optimization 
-bounds = [ (1e-7,0.15) for _ in range(10) ]
+bounds = [ (1e-7,0.15) for _ in range(2*npar) ]
 
 from skopt import gp_minimize
 # https://scikit-optimize.github.io/st8able/modules/generated/skopt.gp_minimize.html
@@ -33,25 +35,26 @@ max_iter = 30
 # seed: EI - 0, LCB-10, PI-20 
 #x =  (0.15-1e-7)*np.random.rand(10) + 1e-7
 #objfun(x)
+path = 'Results/'
+os.makedirs(path, exist_ok=True)
+
 names = ['EI','LCB','PI']
-iterations = [0,10,20]
-for name,itera in zip(names,iterations):
+for name in names:
     BestSol = []
     BestVal = []
     Results = []
-    print(name, itera)
     for i in range(10):
-        print('Iteration ',i)
+        print(name,' iteration: ',i)
         cigre_opt = gp_minimize(objfun,      # the function to minimize
                                 bounds,      # the bounds on each dimension of x
-                                acq_func="EI",      # the acquisition function
-                                n_calls=max_iter,         # the number of evaluations of f
-                                n_random_starts=3,  # the number of random initialization points
-                                random_state=i+itera,
+                                acq_func=name,      # the acquisition function
+                                n_calls=max_iter,   # the number of evaluations of f
+                                n_random_starts=5,  # the number of random initialization points
+                                random_state=i,
                                 noise="gaussian")   # the random seed
         Results.append(cigre_opt['func_vals'])
         BestSol.append(cigre_opt['x'])
         BestVal.append(cigre_opt['fun'])
-    np.save('Results_BO_SK_'+name+'_EV5',Results)
-    np.save('BestVal_BO_SK_'+name+'_STD_EV5',BestVal)
-    np.save('BestSol_BO_SK_'+name+'_STD_EV5',BestSol)
+    np.save(path+'BO_mg2_'+name+'_Results',Results)
+    np.save(path+'BO_mg2_'+name+'_BestVal',BestVal)
+    np.save(path+'BO_mg2_'+name+'_BestSol',BestSol)
