@@ -11,12 +11,12 @@ from microgrid import mgrid
 mg = mgrid()
 mg.microgrid1()
 npar = mg.npar
-mg.MC.nd = np.int32(1e3) #Cantidad de muestras
-if npar ==5:
+mg.MC.nd = np.int32(50) #Cantidad de muestras
+if npar==5:
     name = 'GA_mg1'
 else:
     name = 'GA_mg2'
-path = 'Results/'
+path = 'ResultsSize50/'
 os.makedirs(path, exist_ok=True)
 
 def objfun(x):

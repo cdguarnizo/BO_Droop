@@ -11,10 +11,11 @@ import matplotlib.pyplot as plt
 import os
 from microgrid import mgrid
 mg = mgrid()
-mg.microgrid1()
-mg.path = 'Results/Figs/EI_mg2/' #where to save figures
-path = 'Results/BO_mg2' #results' name
-npar = 3
+#mg.microgrid1()
+npar = mg.npar
+mg.path = 'Results/Figs/EI_mg1_ds/' #where to save figures
+path = 'Results/BO_mg1_ds' #results' name
+
 
 #GPyOpt
 BestVal_EI = np.load(path+'_EI_BestVal.npy')
@@ -117,9 +118,9 @@ print(mg.optmetrics)
     
 mg.converters[:,2] = BestSol_EI[[ind],:npar]
 mg.converters[:,3] = BestSol_EI[[ind],npar:]
-mg.updateYd(0)
+#mg.updateYd(0)
 print('Mejores parametros: ',BestSol_EI[[ind],:])
-mae, stdw = mg.dynamic_sim(mg.converters, nd = 500, pw_flag=True)
+mae, stdw = mg.dynamic_sim(mg.converters, pw_flag=True)
 #tp.save("01.tex")
 print(mae,stdw)
 

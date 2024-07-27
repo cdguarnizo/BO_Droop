@@ -12,9 +12,14 @@ import os
 from microgrid import mgrid
 mg = mgrid()
 mg.microgrid1()
-mg.path = 'Results/Figs/GA_mg2/'
-path = 'Results/GA_mg2'
 npar = mg.npar
+if npar ==5:
+    mg.path = 'Results/Figs/PSO_mg1/'
+    path = 'Results/PSO_mg1'
+else:
+    mg.path = 'Results/Figs/GA_mg2/'
+    path = 'Results/GA_mg2'
+
 #GPyOpt
 BestVal = np.load(path+'_BestVal.npy')
 print(BestVal)
@@ -67,8 +72,7 @@ print(mg.optmetrics)
     
 mg.converters[:,2] = BestSol[[ind],:npar]
 mg.converters[:,3] = BestSol[[ind],npar:]
-mg.updateYd(4)
-mae, stdw = mg.dynamic_sim(mg.converters, nd = 2000, pw_flag=True)
+mae, stdw = mg.dynamic_sim(mg.converters, pw_flag=True)
 #tp.save("01.tex")
 print(mae,stdw)
 

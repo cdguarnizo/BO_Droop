@@ -4,10 +4,7 @@ CIGRE microgrid benchmark class
 """
 
 import numpy as np
-from scipy.sparse.linalg import spsolve
-from scipy.sparse import csr_matrix
 from matplotlib import pyplot as plt
-import pickle as pkl
 
 
 def EV_Demand(nEV):
@@ -62,6 +59,7 @@ def Solar_Sce(Pnom, dist, K1, K2):
         P = Pnom*(v/12.)**3
     else:
         P = Pnom
+
   if (dist == beta):
     A, eta = 7000, 15
     s = np.random.beta(K1,K2)
@@ -169,7 +167,6 @@ class mgrid(object):
         V  = 1j*np.ones((NumN,))
         er = 1.0
         while er>1E-8:
-            # V[1:] = spsolve(Yn,np.conj(s[1:]/V[1:])-Y0*V[0]) #using scipy
             V[1:] = np.linalg.solve(Yn,np.conj(s[1:]/V[1:])-Y0*V[0])
             In = Y@V
             sc = V*np.conj(In)
@@ -290,7 +287,6 @@ class mgrid(object):
         V  = 1j*np.ones((NumN,))
         er = 1.0
         while er>1E-8:
-            # V[1:] = spsolve(Yn,np.conj(s[1:]/V[1:])-Y0*V[0]) #using scipy
             V[1:] = np.linalg.solve(Yn,np.conj(s[1:]/V[1:])-Y0*V[0])
             In = Y@V
             sc = V*np.conj(In)
@@ -360,20 +356,20 @@ class mgrid(object):
                 Dpw[k] = 0.
                 Dqw[k] = 0.
                 for m in range(n):
-                    akm = an[k]-an[m]
+                    akm = an[k,0]-an[m,0]
                     if k is m:
-                        Dpt[k,k] = -B[k,k]*Vn[k]**2-Q[k]
-                        Dpv[k,k] =  G[k,k]*Vn[k]+P[k]/Vn[k]
-                        Dqt[k,k] = -G[k,k]*Vn[k]**2+P[k]
-                        Dqv[k,k] = -B[k,k]*Vn[k]+Q[k]/Vn[k]
+                        Dpt[k,k] = -B[k,k]*Vn[k,0]**2-Q[k,0]
+                        Dpv[k,k] =  G[k,k]*Vn[k,0]+P[k,0]/Vn[k,0]
+                        Dqt[k,k] = -G[k,k]*Vn[k,0]**2+P[k,0]
+                        Dqv[k,k] = -B[k,k]*Vn[k,0]+Q[k,0]/Vn[k,0]
                     else:                
-                        Dpv[k,m] = G[k,m]*Vn[k]*np.cos(akm)+B[k,m]*Vn[k]*np.sin(akm)
-                        Dqv[k,m] = -(B[k,m]*Vn[k]*np.cos(akm)-G[k,m]*Vn[k]*np.sin(akm))  # TODO: check this term
-                        Dpt[k,m] =  Dqv[k,m]*Vn[m]                                 #TODO: check this too!
-                        Dqt[k,m] = -Dpv[k,m]*Vn[m]
+                        Dpv[k,m] = G[k,m]*Vn[k,0]*np.cos(akm)+B[k,m]*Vn[k,0]*np.sin(akm)
+                        Dqv[k,m] = -(B[k,m]*Vn[k,0]*np.cos(akm)-G[k,m]*Vn[k,0]*np.sin(akm))  # TODO: check this term
+                        Dpt[k,m] =  Dqv[k,m]*Vn[m,0]                                 #TODO: check this too!
+                        Dqt[k,m] = -Dpv[k,m]*Vn[m,0]
 
-                    Dpw[k] = Dpw[k] + Dr[k,m]*Vn[k]*Vn[m]*np.cos(akm)+Di[k,m]*Vn[k]*Vn[m]*np.sin(akm)
-                    Dqw[k] = Dqw[k] - Di[k,m]*Vn[k]*Vn[m]*np.cos(akm)+Dr[k,m]*Vn[k]*Vn[m]*np.sin(akm)
+                    Dpw[k] = Dpw[k] + Dr[k,m]*Vn[k,0]*Vn[m,0]*np.cos(akm)+Di[k,m]*Vn[k]*Vn[m]*np.sin(akm)
+                    Dqw[k] = Dqw[k] - Di[k,m]*Vn[k,0]*Vn[m,0]*np.cos(akm)+Dr[k,m]*Vn[k]*Vn[m]*np.sin(akm)
             
 
             Jac = np.block([ [Dpt, Dpv, Dpw+1./xi],
@@ -385,6 +381,7 @@ class mgrid(object):
             w  = w + dX[-1]
             if er<1E-8:
                 break
+        #print('Eigs: ',np.real(np.linalg.eigvals(Jac))<0.0)
         return w,Vs,P,Q,I,np.sum(P)-np.sum(self.g)
     
     def Montecarlo(self,xi,zita, graficar=False, flagres=False, savedata=False, flagseed=False, seed =0):
@@ -393,18 +390,15 @@ class mgrid(object):
         nd = self.MC.nd  # Monte Carlo number of iterations
         w = np.zeros((nd,1)) #Newton
         dp = np.zeros((nd,1))
-        mae = np.zeros((nd,1)) #Dynamic Simulation
-        wstd = np.zeros((nd,1)) #Dynamic Simulation
         dv = np.zeros((nd,2))
         imax = np.zeros((nd,1))
         dpq = np.zeros((nd,2)) # caching the diference between p_ref and p
         convs = self.converters.copy()
-        convs[:,2] = xi 
-        convs[:,3] = zita
+        convs[:,2] = xi.copy() 
+        convs[:,3] = zita.copy()
         solar = 1.0
         wind = 2.0
         EV = 3.0  
-        optmetrics = np.zeros((9,))
         #demand = self.demand.copy()
         if flagseed:
             np.random.seed(seed)
@@ -417,9 +411,9 @@ class mgrid(object):
                 # TODO: check -> Reactive power is not considered
                 n1 = np.int32(self.demandL[n]) #node number
                 if self.demandType[n]:
-                    g[n] =  EV_Demand(10.0)
+                    g[n] = EV_Demand(10.0)
                 else:
-                    g[n] =  self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
+                    g[n] = self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
                 Yd[n1] = Yd[n1] + g[n]
             self.g = g
             self.Yd = Yd
@@ -442,9 +436,12 @@ class mgrid(object):
             dpq[k,0] = np.max(np.abs(p[:,0]-convs[:,1]))
             dpq[k,1] = np.max(np.abs(q))
         
-        mae, wstd = self.dynamic_sim(convs)
-        if (wstd == np.nan) or (wstd > 1.0):
-            wstd = 1.0
+        #mae = self.dynamic_sim(convs, nd=100)
+        #print(mae)
+        #if np.isnan(mae):
+        #    mae = 1.0
+        #else:
+        #    mae /= 520.0
 
         if graficar is True:
             fig01 = plt.figure()
@@ -481,12 +478,8 @@ class mgrid(object):
             fig04.savefig(self.path+'imax.pdf',dpi=200)
         
         if savedata is True:
-            np.save(self.savename+"_w",w)
-            np.save(self.savename+"_dv",dv)
-            np.save(self.savename+"_dpq",dpq)
-            np.save(self.savename+"_mae",mae)
-            np.save(self.savename+"_wstd",wstd)
-            np.save(self.savename+"_params",np.concatenate((xi, zita)))
+            np.savez(self.savename,w=w,dp=dp,dv=dv,dpq=dpq,imax=imax,
+                     params=np.concatenate((xi, zita)))
 
         '''
         # results on w
@@ -518,43 +511,23 @@ class mgrid(object):
         self.resTol = self.MC.var_pos_w+self.MC.var_neg_w+self.MC.var_pos_v+\
                       self.MC.var_neg_v+self.MC.var_dq+self.MC.var_dp 
         '''
-
+        optmetrics = np.zeros((8,))
         # Variance minimization 
         optmetrics[0] = np.sum(dp**2)/(nd-1) #Power losses around 0
-        optmetrics[1] = np.sum((w-1.)**2)/(nd-1) #w aroung 1
+        optmetrics[1] = np.sum((w-1.)**2)/(nd-1) #w around 1
         optmetrics[2] = np.sum((dv[:,0]-1.)**2)/(nd-1) #dv min around 1
         optmetrics[3] = np.sum((dv[:,1]-1.)**2)/(nd-1) #dv max around 1
         optmetrics[4] = np.sum(dpq[:,0]**2)/(nd-1) #dp around 0
         optmetrics[5] = np.sum(dpq[:,1]**2)/(nd-1) #dq around 0
         optmetrics[6] = np.sum(imax**2)/(nd-1) #imax around 0
-        optmetrics[7] = wstd
+        #optmetrics[7] = mae
         self.resDev =  np.sum(optmetrics)
-        optmetrics[8] = np.mean(dp)
+        optmetrics[7] = np.mean(dp)
         self.optmetrics = optmetrics
-        #print('Corriente',np.max(imax))
-        #self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
-        #           np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
-        #           np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(mae)/nd + np.sum(wstd)/nd
         
-        #self.resDev = np.sum(np.square(w-1.0))/(w.size-1.) + np.sum(np.square(dv[:,0]-1.0))/(dv.shape[0]-1.) + \
-        #            np.sum(np.square(dv[:,1]-1.0))/(dv.shape[0]-1.) + np.sum(np.square(dpq[:,0]))/(dpq.shape[0]-1.) + \
-        #            np.sum(np.square(dpq[:,1]))/(dpq.shape[0]-1.) + np.sum(np.square(mae))/nd + np.sum(np.square(wstd))/nd
-        
-        print(xi,zita,' Funcion objetivo:',self.resDev)
         if np.isnan(self.resDev):
-            self.resDev = np.inf
-            print('Infinito')
-            
-        #print(self.resDev)
-        #  self.res = np.max(w, initial = 1.0)-np.min(w,initial = 1.0) +\
-        #             np.max(dv[:,1], initial = 1.0)-np.min(dv[:,0],initial = 1.0) +\
-        #             np.max(dpq[:,0],initial = 0.5)+np.max(dpq[:,1],initial = 0.5)-1.0
-
-        if flagres:
-            self.res = self.resTol
-        else:
-            self.res = self.resDev
-        
+            self.resDev = 10.0
+                 
     def updateYd(self, seed):
         np.random.seed(seed)
         Yd = 1j*np.zeros((self.NumN,1))
@@ -570,28 +543,28 @@ class mgrid(object):
         self.g = g
         self.Yd = Yd
         
-    def dynamic_sim(self, convs, dt=5e-5, fp=0.7, nd = 500, pw_flag=False):
+    def dynamic_sim(self, convs, dt=5e-5, fp=0.7, nd = 10, pw_flag=False):
         
-        xi = convs[:,2]
-        zita = convs[:,3]
+        xi = convs[:,2].copy()
+        zita = convs[:,3].copy()
         
         xi = xi.reshape(xi.size,1)
         zita = zita.reshape(zita.size,1)
-        
+
         Ydb = self.Yd*(1./fp*np.exp(1j*np.arccos(fp)))
-        wbase = 2*np.pi*50
+        wbase = 2.0*np.pi*50.0
         N = np.int_(convs[:,0])
-        tau = (convs[:,4])[:, np.newaxis]
+        tau = (convs[:,4].copy())[:, np.newaxis]
         S = np.int_(np.setdiff1d(np.arange(self.NumN),N))
         n = N.size
         V = np.ones((n,1))
         w0 = 1.0
-        Pref = (convs[:,1])[:,np.newaxis]
+        Pref = (convs[:,1].copy())[:,np.newaxis]
         Qref = np.zeros((n,1))
         v0 = np.ones((n,1))
         th = np.zeros((n,1))
-        p  = Pref
-        q  = Qref
+        p  = Pref.copy()
+        q  = Qref.copy()
         gr_wci = np.zeros((nd,1))
         t = np.zeros((nd,1))
         gr_w = np.zeros((nd,n))
@@ -600,61 +573,66 @@ class mgrid(object):
         gr_v = np.zeros((nd,n))
         gr_y = np.ones((nd,1))
         wci = 1.0
-        for k in range(0,nd):
-            ylin = np.diag(1./(np.real(self.zlin[:,0])+wci*np.imag(self.zlin[:,0])*1j))
-            Yd = np.real(Ydb) + wci*1j*np.imag(Ydb)
-            Yb = self.A.T@ylin@self.A + np.diag(Yd[:,0]) + np.diag(self.Yc[:,0]*wci)
-            Y = Yb[np.ix_(N,N)] - Yb[np.ix_(N,S)]@np.linalg.solve(Yb[np.ix_(S,S)],Yb[np.ix_(S,N)])
-            In = Y@V
-            #print(np.max(np.abs(In)))
-            Sn = V*np.conj(In)
-            P = np.real(Sn)
-            Q = np.imag(Sn)
-            dp = (P-p)/tau
-            dq = (Q-q)/tau        
-            w = (Pref-p)*xi + w0
-            wci = np.sum(1./xi*w)/np.sum(1./xi)
-            dth = wbase*(w-wci)
-            t[k] = k*dt
-            th = th + dth*dt
-            p  = p + dp*dt
-            q  = q + dq*dt
-            th_ci = np.sum(th/xi)/np.sum(1./xi)
-            th = th-th_ci
-            Vn = (Qref-q)*zita + v0
-            V = Vn*np.exp(1j*th)
-            gr_w[k,:] = w[:,0]
-            gr_p[k,:] = p[:,0]
-            gr_th[k,:] = th[:,0]
-            gr_v[k,:] = Vn[:,0]
-            gr_wci[k] = wci
-            gr_y[k] = np.linalg.norm(Y)
-        
-        
-        mae = np.mean(np.abs(gr_w.T-gr_w[-1,:].reshape((n,1)) ))
-        stdw = np.std(gr_w[-1,:])
-        if pw_flag:
-            fig01 = plt.figure()
-            ax01 = fig01.add_subplot(1, 1, 1) 
-            #plt.plot(t[nd-50:],gr_w[nd-50:])
-            plt.plot(t, gr_w)
-            plt.savefig('montecarda.pdf')
-        return mae, stdw
+        try:
+            for k in range(0,nd):
+                ylin = np.diag(1./(np.real(self.zlin[:,0])+wci*np.imag(self.zlin[:,0])*1j))
+                Yd = np.real(Ydb) + wci*1j*np.imag(Ydb)
+                Yb = self.A.T@ylin@self.A + np.diag(Yd[:,0]) + np.diag(self.Yc[:,0]*wci)
+                Y = Yb[np.ix_(N,N)] - Yb[np.ix_(N,S)]@np.linalg.solve(Yb[np.ix_(S,S)],Yb[np.ix_(S,N)])
+                In = Y@V
 
+                Sn = V*np.conj(In)
+                P = np.real(Sn)
+                Q = np.imag(Sn)
+                dp = (P-p)/(tau+1e-6)
+                dq = (Q-q)/(tau+1e-6)        
+                w = (Pref-p)*xi + w0
+                wci = np.sum(1./xi*w)/np.sum(1./xi)
+                dth = wbase*(w-wci)
+                t[k] = k*dt
+                th = th + dth*dt
+                p  = p + dp*dt
+                q  = q + dq*dt
+                th_ci = np.sum(th/xi)/np.sum(1./xi)
+                th = th-th_ci
+                Vn = (Qref-q)*zita + v0
+                V = Vn*np.exp(1j*th)
+                gr_w[k,:] = w[:,0]
+                gr_p[k,:] = p[:,0]
+                gr_th[k,:] = th[:,0]
+                gr_v[k,:] = Vn[:,0]
+                gr_wci[k] = wci
+                gr_y[k] = np.linalg.norm(Y)
+        
+        
+            mae = np.mean((gr_w-1.0)**2)
+            if pw_flag:
+                fig01 = plt.figure()
+                ax01 = fig01.add_subplot(1, 1, 1) 
+                #plt.plot(t[nd-50:],gr_w[nd-50:])
+                plt.plot(t, gr_w)
+                plt.savefig('montecarda.pdf')
+        except:
+            #if the dyamic simulation fails then 
+            mae = 10.0
+        return mae
 
 
 if __name__ == "__main__":
+
     mg = mgrid()
     mg.microgrid1()
 
-    npar = 4
-    xi = np.random.rand(4)
-    zita = np.random.rand(4)
+    npar = mg.npar
+    np.random.seed(1)
+    xi = np.random.rand(npar)*0.15
+    zita = np.random.rand(npar)*0.15
        
     mg.MC.nd = np.int32(500) #Sample Size
     mg.Montecarlo(xi, zita)
-    
-    #mg.converters[:,2] = xi
-    #mg.converters[:,3] = zita
-    #mae, stdw =mg.dynamic_sim(mg.converters, pw_flag=True)
-    #print(mae, stdw)
+    mg.converters[:,2] = xi
+    mg.converters[:,3] = zita
+    print(mg.optmetrics)
+    print(mg.resDev)
+    mae = mg.dynamic_sim(mg.converters, nd = 100, pw_flag=True)
+    print(mae)

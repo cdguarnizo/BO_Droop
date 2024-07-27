@@ -5,10 +5,6 @@ Created on Thu Jan 30 14:07:44 2020
 @author: cristianguarnizo
 """
 
-# comparar las metricas con igual para el montecarlo
-# boxplots de cada metodo de opt
-# simulacion dinamica antes y despues
-
 import numpy as np
 import matplotlib.pyplot as plt
 #import tikzplotlib as tp
@@ -16,10 +12,14 @@ import os
 from microgrid import mgrid
 mg = mgrid()
 mg.microgrid1()
-mgname = 'mg2'
-mg.path = 'Results/Figs/PSO_mg2/'
-path = 'Results/PSO_mg2'
-npar = 3
+npar = mg.npar
+if npar ==5:
+    mg.path = 'Results/Figs/GA_mg1_ds/'
+    path = 'Results/GA_mg1_ds'
+else:
+    mg.path = 'Results/Figs/GA_mg2_ds/'
+    path = 'Results/GA_mg2_ds'
+
 #GPyOpt
 BestVal = np.load(path+'_BestVal.npy')
 print(BestVal)
@@ -59,12 +59,12 @@ plt.show()
 #tp.save("zita_comp.tex")
 
 ## plot histograms
+os.makedirs(mg.path, exist_ok=True)
 xi = BestSol[[ind],:npar]
 zita = BestSol[[ind],npar:]
-os.makedirs(mg.path, exist_ok=True)
-mg.Montecarlo(xi,zita,graficar=True, flagres=False)
+print('Mejores parametros: ',BestSol[[ind],:])
+mg.Montecarlo(xi,zita,graficar=False, flagres=False)
 print(mg.optmetrics)
-
 
 ## Plot w simulaiton
 #from microgrid import mgrid
@@ -72,9 +72,9 @@ print(mg.optmetrics)
     
 mg.converters[:,2] = BestSol[[ind],:npar]
 mg.converters[:,3] = BestSol[[ind],npar:]
-mae, stdw = mg.dynamic_sim(mg.converters, nd = 2000, pw_flag=True)
+mae = mg.dynamic_sim(mg.converters, pw_flag=True)
 #tp.save("01.tex")
-print(mae,stdw)
+print(mae)
 
 '''
 mg.converters[:,2] = BestSol_MPI[[ind],:5]
