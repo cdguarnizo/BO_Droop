@@ -100,11 +100,11 @@ class mgrid(object):
                                [1.380,0.082,5.520,0.418,0.18], #(3) SC - 4x16 mm2 Cu
                                [0.871,0.081,3.480,0.409,0.22]])#(4) SC - 4x25 mm2 Cu   
         
-        DemandL = np.array([10,12,13,17,18,10])
-        DemandP = np.array([15000.0,55000.0,47000.0,72000.0,15000.0,100.0])/10.0
+        DemandL = np.array([10,12,13,17,18])
+        DemandP = np.array([100.0,55000.0,47000.0,72000.0,15000.0])/10.0
         #node 10 EV
         #node number, type 0:normal 1:EV, params
-        DemandType = np.array([0,0,0,0,0,1])
+        DemandType = np.array([1,0,0,0,0])
         solar = 1.0
         wind = 2.0
         EV = 3.0
@@ -158,7 +158,7 @@ class mgrid(object):
         Converters[:,1] = Converters[:,1]/Pnom
         s = np.zeros((NumN,))
         for k in range(NumC):
-            n1 = np.int32(Converters[k,0])
+            n1 = np.int32(Converters[k,0]) #node
             s[n1] = Converters[k,1]
             
         # Yn = csr_matrix(Y[1:,1:]) #Using scipy
@@ -202,7 +202,7 @@ class mgrid(object):
         Pnom = 10000 # Nominal power in watts
 
         Lines = np.array([[0,1,3000,0],
-                [1,2,3000,0],	
+                        [1,2,3000,0],
                         [1,3,2400,1],
                         [1,4,3000,0],
                         [1,5,1600,2],
@@ -319,16 +319,16 @@ class mgrid(object):
 
         xi = np.expand_dims(convs[:,2], axis=1)
         zita = np.expand_dims(convs[:,3], axis=1)
-        N = np.int_(convs[:,0])
+        N = np.int_(convs[:,0]) #Nodes
         S = np.setdiff1d(np.arange(self.NumN),N)
         n = np.size(N)
         Pref = np.expand_dims(convs[:,1], axis=1)
         Qref = np.zeros((n,1))
         #er = 10
-        for ite in range(iterations):
+        for _ in range(iterations):
             ylin = np.diag( 1./(np.real(self.zlin)+w*1j*np.imag(self.zlin))[:,0] )
             Llin = np.diag( np.imag(self.zlin)[:,0] )
-            Yd2 = np.real(self.Yd) + w*1j*np.imag(self.Yd)  # modelo las cargas como admitancias
+            Yd2 = np.real(self.Yd) + w*1j*np.imag(self.Yd)  # admitance load model
             Yb = (self.A.T @ ylin @ self.A) + np.diag(Yd2[:,0]) + np.diag(self.Yc[:,0])*w
             Db = -(self.A.T @ ylin)@(1j*Llin)@(ylin @ self.A) + 1j*np.imag(Yd2) + np.diag(self.Yc[:,0])
             Y = Yb[np.ix_(N, N)] - Yb[np.ix_(N, S)]@(np.linalg.inv(Yb[np.ix_(S, S)])@Yb[np.ix_(S, N)])
@@ -357,7 +357,7 @@ class mgrid(object):
                 Dqw[k] = 0.
                 for m in range(n):
                     akm = an[k,0]-an[m,0]
-                    if k is m:
+                    if k == m:
                         Dpt[k,k] = -B[k,k]*Vn[k,0]**2-Q[k,0]
                         Dpv[k,k] =  G[k,k]*Vn[k,0]+P[k,0]/Vn[k,0]
                         Dqt[k,k] = -G[k,k]*Vn[k,0]**2+P[k,0]
@@ -371,7 +371,6 @@ class mgrid(object):
                     Dpw[k] = Dpw[k] + Dr[k,m]*Vn[k,0]*Vn[m,0]*np.cos(akm)+Di[k,m]*Vn[k]*Vn[m]*np.sin(akm)
                     Dqw[k] = Dqw[k] - Di[k,m]*Vn[k,0]*Vn[m,0]*np.cos(akm)+Dr[k,m]*Vn[k]*Vn[m]*np.sin(akm)
             
-
             Jac = np.block([ [Dpt, Dpv, Dpw+1./xi],
                    [Dqt, Dqv+np.diag((1./zita)[:,0]), Dqw],
                    [-1./xi.T, np.zeros((1,n+1))] ])
@@ -382,7 +381,7 @@ class mgrid(object):
             if er<1E-8:
                 break
         #print('Eigs: ',np.real(np.linalg.eigvals(Jac))<0.0)
-        return w,Vs,P,Q,I,np.sum(P)-np.sum(self.g)
+        return w,Vs,P,Q,I,np.sum(P)
     
     def Montecarlo(self,xi,zita, graficar=False, flagres=False, savedata=False, flagseed=False, seed =0):
         #flagres para incluir MAE de la frecuencia en la funcion objetivo
@@ -404,19 +403,15 @@ class mgrid(object):
             np.random.seed(seed)
         for k in range(nd):
             #demand[:,1]= self.demand[:,1]*np.random.rand(self.NumD)*10  # Demands are uniform distributed
-            
             Yd = 1j*np.zeros((self.NumN,1))
-            g = np.zeros((self.NumD,1))
             for n in range(self.NumD):
-                # TODO: check -> Reactive power is not considered
                 n1 = np.int32(self.demandL[n]) #node number
-                if self.demandType[n]:
-                    g[n] = EV_Demand(10.0)
+                if self.demandType[n]==1:
+                    g = EV_Demand(10.0)
                 else:
-                    g[n] = self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
-                Yd[n1] = Yd[n1] + g[n]
-            self.g = g
-            self.Yd = Yd
+                    g = self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
+                Yd[n1] += g
+            self.Yd = Yd.copy()
             
             for c in range(self.NumC):
                 Pnom = self.converters[c,1]
@@ -433,7 +428,14 @@ class mgrid(object):
             dv[k,0] = np.min(np.abs(v))
             dv[k,1] = np.max(np.abs(v))
             imax[k] = np.max(np.abs(i))
-            dpq[k,0] = np.max(np.abs(p[:,0]-convs[:,1]))
+            pg = p[:,0]+Yd[np.int_(convs[:,0]),0].real
+            print('Yd',Yd[np.int_(convs[:,0]),0].real)
+            print('p', p[:,0])
+            print('pg', pg)
+            print('Pref',convs[:,1])
+            print('Sum P',np.sum(p))
+            
+            dpq[k,0] = np.max(np.abs(pg-convs[:,1]))
             dpq[k,1] = np.max(np.abs(q))
         
         #mae = self.dynamic_sim(convs, nd=100)
@@ -443,7 +445,7 @@ class mgrid(object):
         #else:
         #    mae /= 520.0
 
-        if graficar is True:
+        if graficar:
             fig01 = plt.figure()
             ax01 = fig01.add_subplot(1, 1, 1) 
             plt.hist(w,30)
@@ -477,7 +479,7 @@ class mgrid(object):
             fig03.savefig(self.path+'dv.pdf',dpi=200)
             fig04.savefig(self.path+'imax.pdf',dpi=200)
         
-        if savedata is True:
+        if savedata:
             np.savez(self.savename,w=w,dp=dp,dv=dv,dpq=dpq,imax=imax,
                      params=np.concatenate((xi, zita)))
 
@@ -531,16 +533,13 @@ class mgrid(object):
     def updateYd(self, seed):
         np.random.seed(seed)
         Yd = 1j*np.zeros((self.NumN,1))
-        g = np.zeros((self.NumD,1))
         for n in range(self.NumD):
-            # TODO: check -> Reactive power is not considered
             n1 = np.int32(self.demandL[n]) #node number
             if self.demandType[n]:
-                g[n] =  EV_Demand(10.0)
+                g = EV_Demand(10.0)
             else:
-                g[n] =  self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
-            Yd[n1] = Yd[n1] + g[n]
-        self.g = g
+                g = self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
+            Yd[n1] = Yd[n1] + g
         self.Yd = Yd
         
     def dynamic_sim(self, convs, dt=5e-5, fp=0.7, nd = 10, pw_flag=False):
@@ -621,7 +620,7 @@ class mgrid(object):
 if __name__ == "__main__":
 
     mg = mgrid()
-    mg.microgrid1()
+    #mg.microgrid1()
 
     npar = mg.npar
     np.random.seed(1)
@@ -632,7 +631,8 @@ if __name__ == "__main__":
     mg.Montecarlo(xi, zita)
     mg.converters[:,2] = xi
     mg.converters[:,3] = zita
-    print(mg.optmetrics)
-    print(mg.resDev)
-    mae = mg.dynamic_sim(mg.converters, nd = 100, pw_flag=True)
-    print(mae)
+    #print(mg.optmetrics)
+    #print(mg.resDev)
+    #mae = mg.dynamic_sim(mg.converters, nd = 100, pw_flag=True)
+    #print(mae)
+    print(mg.Newton_Freq(mg.converters))
