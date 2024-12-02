@@ -221,8 +221,8 @@ class mgrid(object):
                     [58.35,74.930,3.480,0.409,0.0], #(4)
                     [46.68,59.940,3.480,0.409,0.0]]) #(5)
 
-        DemandL = np.array([2,3,4,5,6,6])
-        DemandP = np.array([2125.0,3329.0,2050.0,1257.0,1056.0,100.0])/10.0
+        DemandL = np.array([2,3,4,5,6])
+        DemandP = np.array([2125.0, 3329.0, 2050.0, 1257.0, 1056.0, 100.0])/10.0
         #node number, type 0:normal 1:EV, params
         #node 6 ev
         DemandType = np.array([0,0,0,0,0,1])
@@ -331,8 +331,8 @@ class mgrid(object):
             Yd2 = np.real(self.Yd) + w*1j*np.imag(self.Yd)  # admitance load model
             Yb = (self.A.T @ ylin @ self.A) + np.diag(Yd2[:,0]) + np.diag(self.Yc[:,0])*w
             Db = -(self.A.T @ ylin)@(1j*Llin)@(ylin @ self.A) + 1j*np.imag(Yd2) + np.diag(self.Yc[:,0])
-            Y = Yb[np.ix_(N, N)] - Yb[np.ix_(N, S)]@(np.linalg.inv(Yb[np.ix_(S, S)])@Yb[np.ix_(S, N)])
-            D = Db[np.ix_(N, N)] - Db[np.ix_(N, S)]@(np.linalg.inv(Db[np.ix_(S, S)])@Db[np.ix_(S, N)])
+            Y = Yb[np.ix_(N, N)] - Yb[np.ix_(N, S)]@np.linalg.solve(Yb[np.ix_(S, S)],Yb[np.ix_(S, N)]) #TODO: solve
+            D = Db[np.ix_(N, N)] - Db[np.ix_(N, S)]@np.linalg.solve(Db[np.ix_(S, S)],Db[np.ix_(S, N)])
             Dr = np.real(D)
             Di = np.imag(D)
             G = np.real(Y)
@@ -381,7 +381,14 @@ class mgrid(object):
             if er<1E-8:
                 break
         #print('Eigs: ',np.real(np.linalg.eigvals(Jac))<0.0)
-        return w,Vs,P,Q,I,np.sum(P)
+        Vl = np.linalg.solve(Yb[np.ix_(S, S)],Yb[np.ix_(S, N)])@Vs
+        Il = Yb[np.ix_(S, N)]@Vs + np.linalg.solve(Yb[np.ix_(S, S)],Vl)
+        Vt = np.vstack((Vs,Vl))
+        It = np.vstack((I,Il))
+        St = Vt*np.conj(It)
+        Pt = np.real(St)
+        print(Pt.shape)
+        return w,Vs,P,Q,I,np.sum(Pt)
     
     def Montecarlo(self,xi,zita, graficar=False, flagres=False, savedata=False, flagseed=False, seed =0):
         #flagres para incluir MAE de la frecuencia en la funcion objetivo
@@ -393,11 +400,11 @@ class mgrid(object):
         imax = np.zeros((nd,1))
         dpq = np.zeros((nd,2)) # caching the diference between p_ref and p
         convs = self.converters.copy()
-        convs[:,2] = xi.copy() 
+        convs[:,2] = xi.copy()
         convs[:,3] = zita.copy()
         solar = 1.0
         wind = 2.0
-        EV = 3.0  
+        EV = 3.0
         #demand = self.demand.copy()
         if flagseed:
             np.random.seed(seed)
@@ -429,11 +436,7 @@ class mgrid(object):
             dv[k,1] = np.max(np.abs(v))
             imax[k] = np.max(np.abs(i))
             pg = p[:,0]+Yd[np.int_(convs[:,0]),0].real
-            print('Yd',Yd[np.int_(convs[:,0]),0].real)
-            print('p', p[:,0])
-            print('pg', pg)
-            print('Pref',convs[:,1])
-            print('Sum P',np.sum(p))
+            print('Sum P',dp[k])
             
             dpq[k,0] = np.max(np.abs(pg-convs[:,1]))
             dpq[k,1] = np.max(np.abs(q))
