@@ -202,7 +202,7 @@ class mgrid(object):
         Pnom = 10000 # Nominal power in watts
 
         Lines = np.array([[0,1,3000,0],
-                        [1,2,3000,0],
+                        [1,2,3000,0],	
                         [1,3,2400,1],
                         [1,4,3000,0],
                         [1,5,1600,2],
@@ -214,17 +214,20 @@ class mgrid(object):
                         [3,6,1200,5],
                         [4,6,1500,4]])
 
-        Impedances = np.array([[92.70,143.10,1.136,0.417,0.0], #(0)
-                            [93.36,119.88,13.64,0.472,0.0], #(1)
-                            [62.24,79.920,5.520,0.418,0.0], #(2)
-                            [77.80,99.900,3.480,0.409,0.0], #(3)
-                    [58.35,74.930,3.480,0.409,0.0], #(4)
-                    [46.68,59.940,3.480,0.409,0.0]]) #(5)
+        Impedances = np.array([[0.0309,0.05962,1.136,0.417,0.0], #(0)
+                            [0.0389,0.04995,13.64,0.472,0.0], #(1)
+                            [0.0389,0.04995,5.520,0.418,0.0], #(2)
+                            [0.0389,0.04995,3.480,0.409,0.0], #(3)
+                            [0.0389,0.04995,3.480,0.409,0.0], #(4)
+                            [0.0389,0.04995,3.480,0.409,0.0]]) #(5)
 
-        DemandL = np.array([2,3,4,5,6])
-        DemandP = np.array([2125.0, 3329.0, 2050.0, 1257.0, 1056.0, 100.0])/10.0
+        DemandL = np.array([2,3,4,5,6,5])
+        DemandP = np.array([2125.0,3329.0,2050.0,1257.0,1056.0,100.0])/10.0
+
+        #DemandL = np.array([2,3,4,5,6])
+        #DemandP = np.array([2125.0, 3329.0, 2050.0, 1257.0, 1056.0, 100.0])/10.0
         #node number, type 0:normal 1:EV, params
-        #node 6 ev
+        #node 6 ev (5 en python)
         DemandType = np.array([0,0,0,0,0,1])
         #Typer of source 
         solar = 1.0
@@ -233,6 +236,10 @@ class mgrid(object):
         weibull = 1.0
         beta = 2.0
         normal = 3.0
+        #Converters = np.array([[2,2000,0.08,0.09,0.38E-3,solar,normal,900,40],
+		#                [3,2400,0.10,0.09,0.41E-3,solar,normal,11,1.2],
+        #                [4,2000,0.09,0.10,0.31E-3,solar,normal,900,40]])
+        
         Converters = np.array([[2,Pnom,0.08,0.09,0.38E-3,solar,beta,900,40],
                         [3,Pnom,0.10,0.09,0.41E-3,solar,beta,11,1.2],
                         [4,Pnom,0.09,0.10,0.31E-3,solar,beta,900,40]])
@@ -299,7 +306,7 @@ class mgrid(object):
         self.lines = mg
         self.demandP = DemandP
         self.demandL = DemandL
-        self.DemandType = DemandType
+        self.demandType = DemandType
         self.converters = Converters
         self.Ybus = Y
         self.V = V
@@ -331,7 +338,7 @@ class mgrid(object):
             Yd2 = np.real(self.Yd) + w*1j*np.imag(self.Yd)  # admitance load model
             Yb = (self.A.T @ ylin @ self.A) + np.diag(Yd2[:,0]) + np.diag(self.Yc[:,0])*w
             Db = -(self.A.T @ ylin)@(1j*Llin)@(ylin @ self.A) + 1j*np.imag(Yd2) + np.diag(self.Yc[:,0])
-            Y = Yb[np.ix_(N, N)] - Yb[np.ix_(N, S)]@np.linalg.solve(Yb[np.ix_(S, S)],Yb[np.ix_(S, N)]) #TODO: solve
+            Y = Yb[np.ix_(N, N)] - Yb[np.ix_(N, S)]@np.linalg.solve(Yb[np.ix_(S, S)],Yb[np.ix_(S, N)])
             D = Db[np.ix_(N, N)] - Db[np.ix_(N, S)]@np.linalg.solve(Db[np.ix_(S, S)],Db[np.ix_(S, N)])
             Dr = np.real(D)
             Di = np.imag(D)
@@ -381,14 +388,19 @@ class mgrid(object):
             if er<1E-8:
                 break
         #print('Eigs: ',np.real(np.linalg.eigvals(Jac))<0.0)
-        Vl = np.linalg.solve(Yb[np.ix_(S, S)],Yb[np.ix_(S, N)])@Vs
-        Il = Yb[np.ix_(S, N)]@Vs + np.linalg.solve(Yb[np.ix_(S, S)],Vl)
+        Vl = -np.linalg.solve(Yb[np.ix_(S, S)],Yb[np.ix_(S, N)]@Vs)
+        Il = Yb[np.ix_(S, N)]@Vs + Yb[np.ix_(S, S)]@Vl
         Vt = np.vstack((Vs,Vl))
         It = np.vstack((I,Il))
-        St = Vt*np.conj(It)
-        Pt = np.real(St)
-        print(Pt.shape)
-        return w,Vs,P,Q,I,np.sum(Pt)
+        Pt = np.real(Vt*np.conj(It))
+        if np.sum(Pt)<0:
+            print('Negative power loss!')
+            #print('w',w)
+            #print('Vt', Vt)
+            #print('It', It)
+            #print('Pt', Pt)
+
+        return w,Vt,P,Q,I,np.sum(Pt)
     
     def Montecarlo(self,xi,zita, graficar=False, flagres=False, savedata=False, flagseed=False, seed =0):
         #flagres para incluir MAE de la frecuencia en la funcion objetivo
@@ -397,6 +409,7 @@ class mgrid(object):
         w = np.zeros((nd,1)) #Newton
         dp = np.zeros((nd,1))
         dv = np.zeros((nd,2))
+        Vnodes = np.zeros((nd,self.NumN))
         imax = np.zeros((nd,1))
         dpq = np.zeros((nd,2)) # caching the diference between p_ref and p
         convs = self.converters.copy()
@@ -413,7 +426,7 @@ class mgrid(object):
             Yd = 1j*np.zeros((self.NumN,1))
             for n in range(self.NumD):
                 n1 = np.int32(self.demandL[n]) #node number
-                if self.demandType[n]==1:
+                if self.demandType[n]:
                     g = EV_Demand(10.0)
                 else:
                     g = self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
@@ -435,12 +448,10 @@ class mgrid(object):
             dv[k,0] = np.min(np.abs(v))
             dv[k,1] = np.max(np.abs(v))
             imax[k] = np.max(np.abs(i))
-            pg = p[:,0]+Yd[np.int_(convs[:,0]),0].real
-            print('Sum P',dp[k])
-            
-            dpq[k,0] = np.max(np.abs(pg-convs[:,1]))
+            #pg = p[:,0]+Yd[np.int_(convs[:,0]),0].real
+            dpq[k,0] = np.max(np.abs(p[:,0]-convs[:,1]))
             dpq[k,1] = np.max(np.abs(q))
-        
+            Vnodes[k,:] = np.abs(v).reshape(-1,)
         #mae = self.dynamic_sim(convs, nd=100)
         #print(mae)
         #if np.isnan(mae):
@@ -477,10 +488,25 @@ class mgrid(object):
             ax04.grid()
             ax04.set_title('$imax$')
 
-            fig01.savefig(self.path+'omega.pdf',dpi=200)
-            fig02.savefig(self.path+'dpq.pdf',dpi=200)
-            fig03.savefig(self.path+'dv.pdf',dpi=200)
-            fig04.savefig(self.path+'imax.pdf',dpi=200)
+            fig05 = plt.figure()
+            ax05 = fig05.add_subplot(1, 1, 1) 
+            print(Vnodes.shape)
+            plt.boxplot(Vnodes)
+            ax05.grid()
+            ax05.set_title('$V$ at each node')
+
+            fig06 = plt.figure()
+            ax06 = fig06.add_subplot(1, 1, 1) 
+            plt.hist(dp,30)
+            ax04.grid()
+            ax04.set_title('Losses')
+
+            #fig01.savefig(self.path+'omega.pdf',dpi=200)
+            #fig02.savefig(self.path+'dpq.pdf',dpi=200)
+            #fig03.savefig(self.path+'dv.pdf',dpi=200)
+            #fig04.savefig(self.path+'imax.pdf',dpi=200)
+            fig05.savefig(self.path+'Vnodes.pdf',dpi=200)
+            fig06.savefig(self.path+'losses.pdf',dpi=200)
         
         if savedata:
             np.savez(self.savename,w=w,dp=dp,dv=dv,dpq=dpq,imax=imax,
@@ -623,19 +649,26 @@ class mgrid(object):
 if __name__ == "__main__":
 
     mg = mgrid()
-    #mg.microgrid1()
+    mg.microgrid1()
 
     npar = mg.npar
-    np.random.seed(1)
+    np.random.seed(2)
     xi = np.random.rand(npar)*0.15
     zita = np.random.rand(npar)*0.15
-       
+      
+    BestSol = np.load('ResultsSize500/BO_mg2_EI_BestSol.npy')
+    BestVal = np.load('ResultsSize500/BO_mg2_EI_BestVal.npy')
+    indMin = np.argmin(BestVal)
+    xi = BestSol[indMin,:npar]
+    zita = BestSol[indMin,npar:]
+    
     mg.MC.nd = np.int32(500) #Sample Size
-    mg.Montecarlo(xi, zita)
+    mg.Montecarlo(xi, zita, graficar=True)
     mg.converters[:,2] = xi
     mg.converters[:,3] = zita
+
     #print(mg.optmetrics)
     #print(mg.resDev)
     #mae = mg.dynamic_sim(mg.converters, nd = 100, pw_flag=True)
     #print(mae)
-    print(mg.Newton_Freq(mg.converters))
+    #print(mg.Newton_Freq(mg.converters))
