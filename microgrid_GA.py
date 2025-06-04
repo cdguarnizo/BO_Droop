@@ -9,23 +9,11 @@ import os
 from microgrid import mgrid
 
 mg = mgrid()
-mg.microgrid1()
-npar = mg.npar
-mg.MC.nd = np.int32(50) #Cantidad de muestras
-if npar==5:
-    name = 'GA_mg1'
-else:
-    name = 'GA_mg2'
-path = 'ResultsSize50/'
-os.makedirs(path, exist_ok=True)
-
 def objfun(x):
-    xi = x[:npar].reshape((1,npar))
-    zita = x[npar:].reshape((1,npar))
-    mg.Montecarlo(xi, zita, False, False)
+    xi = x[:mg.NumC].reshape((1, mg.NumC))
+    zita = x[mg.NumC:].reshape((1, mg.NumC))
+    mg.Montecarlo(xi, zita, None, False, False)
     return mg.resDev
-
-from random import random
 
 def GA(f, psize, linf, lsup, maxiter=100, X0 = None):
     D = len(linf) # number of decision variables
@@ -75,21 +63,61 @@ def GA(f, psize, linf, lsup, maxiter=100, X0 = None):
 
     return {'best_x': gb, 'best_f': gbval, 'fval': fiter}
 
-# and compute a baseline to beat with hyperparameter optimization 
-bounds = np.array([1e-7,0.15])*np.ones((2*npar,2))
 
-max_iter = 30
-BestSol = []
-BestVal = []
-Results = []
-for i in range(10):
-    print('GA iteration', i)
-    np.random.seed(i)
-    X = (bounds[:,1]-bounds[:,0])*np.random.rand(10,2*npar)+bounds[:,0]
-    cigre_opt = GA(objfun,10, bounds[:,0], bounds[:,1], max_iter, X0 = X)
-    Results.append(cigre_opt['fval'])
-    BestSol.append(cigre_opt['best_x'])
-    BestVal.append(cigre_opt['best_f'])
-np.save(path+name+'_Results',Results)
-np.save(path+name+'_BestVal',BestVal)
-np.save(path+name+'_BestSol',BestSol)
+microNames = ['mg3']
+sampleSizes = [50,100,200,500,1000]
+#sampleSizes = [500]
+# and compute a baseline to beat with hyperparameter optimization 
+for micro in microNames:
+    if micro == 'mg1':
+        mg.__init__()
+        scales = np.array([2.372127,
+                           8.370188e-4,
+                           0.003252,
+                           0.004098,
+                           2.462032,
+                           6.179947,
+                           9.559357])
+    elif micro == 'mg2':
+        mg.mg2()
+        scales = np.array([2.557772,
+                           7.267406e-3,
+                           2.678419e-11,
+                           1.356699e-11,
+                           3.615616,
+                           2.142949e-8,
+                           4.319097])
+    else:
+        mg.mg3()
+        scales = np.array([13.754020,
+                    3.723757e-3,
+                    0.002352,
+                    1.396108e-3,
+                    8.451084,
+                    1.049735,
+                    9.766920])
+   
+    bounds = np.array([1e-7,0.15])*np.ones((2*mg.NumC,2))
+    name = 'GA_'+micro
+
+    for size in sampleSizes:
+        mg.MC.nd = np.int32(size) #Cantidad de muestras
+        path = 'ResultsSize'+str(mg.MC.nd)+'/'
+        os.makedirs(path, exist_ok=True)
+
+        max_iter = 30
+        BestSol = []
+        BestVal = []
+        Results = []
+        for i in range(10):
+            print(f'{name} GA size: {size}, iter: {i}')
+            np.random.seed(i)
+            X = (bounds[:,1]-bounds[:,0])*np.random.rand(10,2*mg.NumC)+bounds[:,0]
+            cigre_opt = GA(objfun,10, bounds[:,0], bounds[:,1], max_iter, X0 = X)
+            print(cigre_opt['best_x'], cigre_opt['best_f'])  
+            Results.append(cigre_opt['fval'])
+            BestSol.append(cigre_opt['best_x'])
+            BestVal.append(cigre_opt['best_f'])
+        np.save(path+name+'_Results',Results)
+        np.save(path+name+'_BestVal',BestVal)
+        np.save(path+name+'_BestSol',BestSol)

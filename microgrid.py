@@ -11,11 +11,11 @@ def EV_Demand(nEV):
   ''' 
   Electric Vehicle stochastic demand generation.
   '''
-  nEV_val = np.array([10.0, 20.0, 30.0]) #Number of Vehicles
+  nEV_val = np.array([5.0, 10.0, 20.0, 30.0]) #Number of Vehicles
   idx = np.where(nEV_val == nEV)[0][0]
-  shape = [2.2784,3.71581,5.15059] #Gamma's shape parameter
-  scale = [103.043,110.621,133.027] #Gamma's scale parameter
-  return -np.random.gamma(shape[idx],scale=scale[idx])/10000 #EV demand in W
+  shape = [1.94733,2.2784,3.71581,5.15059] #Gamma's shape parameter
+  scale = [72.7711,103.043,110.621,133.027] #Gamma's scale parameter
+  return np.random.gamma(shape[idx],scale=scale[idx])*1000 #EV demand in W
 
 def Wind_Sce(Pnom, dist, K1, K2):
   ''' 
@@ -72,11 +72,17 @@ def Solar_Sce(Pnom, dist, K1, K2):
 
 class mgrid(object):
     def __init__(self):
-        Vnom = 400 # Line to Line voltage in volts
-        wnom = 2.*np.pi*60. # Nominal angular velocity
-        Pnom = 10000 # Nominal power in watts
+        self.MC = lambda:0 # Easy way to create an object
+        self.MC.nd = 100 # Number of samples by default
+        self.savename = 'data'
+        self.path = ''
+
+    def mg1(self): #Original Cigre without EV
+        self.Vnom = 400.0 # Line to Line voltage in volts
+        self.wnom = 2.*np.pi*60. # Nominal angular velocity
+        self.Pnom = 100000.0 # Nominal power in watts
         # N1 N2 L(m) type 
-        Lines = np.array([[0,1,35,0],
+        self.Lines = np.array([[0,1,35,0],
                        [1,2,35,0],
                        [2,3,35,0],
                        [3,4,35,0],
@@ -94,114 +100,40 @@ class mgrid(object):
                        [15,16,35,0],
                        [16,17,30,0],
                        [8,18,30,1]])
+
         # Rph Xph Ro Xo(ohm/km) Cap(uF/km)
-        Impedances = np.array([[0.284,0.083,1.136,0.417,0.38], #(1) OL-Twisted cable 4x120 mm2
+        self.Impedances = np.array([[0.284,0.083,1.136,0.417,0.38], #(1) OL-Twisted cable 4x120 mm2
                                [3.690,0.094,13.64,0.472,0.05], #(2) SC - 4x6 mm2 Cu
                                [1.380,0.082,5.520,0.418,0.18], #(3) SC - 4x16 mm2 Cu
                                [0.871,0.081,3.480,0.409,0.22]])#(4) SC - 4x25 mm2 Cu   
         
-        DemandL = np.array([10,12,13,17,18])
-        DemandP = np.array([100.0,55000.0,47000.0,72000.0,15000.0])/10.0
+        self.DemandL = np.array([10,12,13,17,18])
+        self.DemandP = np.array([15000.0,55000.0,47000.0,72000.0,15000.0])
         #node 10 EV
         #node number, type 0:normal 1:EV, params
-        DemandType = np.array([1,0,0,0,0])
+        self.DemandType = np.array([0,0,0,0,0])
         solar = 1.0
         wind = 2.0
-        EV = 3.0
+        #EV = 3.0
         weibull = 1.0
         beta = 2.0
-        normal = 3.0
+        #normal = 3.0
         # node power Kp Kq Tau type dist K1 K2
-        Converters = np.array([[11,Pnom,0.05,0.04,0.32E-3,solar,beta,900,40],
-                            [12,Pnom,0.08,0.09,0.38E-3,solar,beta,900,40],
-                            [13,2000,0.10,0.09,0.41E-3,wind,weibull,11,1.2],
-                            [17,Pnom,0.09,0.10,0.31E-3,solar,beta,900,40],
-                            [18,2000,0.08,0.08,0.34E-3,wind,weibull,11,1.2]])
-        #Organizar la estructura
-        NumN = np.max([np.max(Lines[:,0]),np.max(Lines[:,1])])+1
-        NumL = np.size(Lines[:,0])
-        NumD = np.size(DemandL) 
-        NumC = np.size(Converters[:,0])
-        Zbase = Vnom*Vnom/Pnom
-        Y = 1j*np.zeros((NumN,NumN))
-        Yc = 1j*np.zeros((NumN,1))
-        mg = 1j*np.zeros((NumL,4))
-        zlin = 1j*np.zeros((NumL,1))
-        A = np.zeros((NumL,NumN))
-        for k in range(NumL):
-            n1 = Lines[k,0]
-            n2 = Lines[k,1]
-            t = Lines[k,3]
-            z = (Impedances[t,0]+1j*Impedances[t,1])/1000/Zbase*Lines[k,2]
-            b = 1j*Impedances[t,4]*wnom/1000*Lines[k,2]*Zbase*1E-6
-            mg[k,0:4] = np.array([n1,n2,z,b])
-            Y[n1,n1] = Y[n1,n1] + 1.0/z + b
-            Y[n1,n2] = Y[n1,n2] - 1.0/z
-            Y[n2,n1] = Y[n2,n1] - 1.0/z
-            Y[n2,n2] = Y[n2,n2] + 1.0/z + b
-            A[k,n1] =  1.0
-            A[k,n2] = -1.0
-            zlin[k] = z
-            Yc[n1] = Yc[n1] + b
-            Yc[n2] = Yc[n2] + b
-            
-        # Include the demand as constant impedances
-        DemandP = DemandP/Pnom
-        Yd = 1j*np.zeros((NumN,1))
-        for k in range(NumD):
-            n1 = np.int32(DemandL[k])
-            g = DemandP[k]
-            Y[n1,n1] = Y[n1,n1] + g
-            Yd[n1] = Yd[n1] + g
-            
-        # Load flow in grid mode
-        Converters[:,1] = Converters[:,1]/Pnom
-        s = np.zeros((NumN,))
-        for k in range(NumC):
-            n1 = np.int32(Converters[k,0]) #node
-            s[n1] = Converters[k,1]
-            
-        # Yn = csr_matrix(Y[1:,1:]) #Using scipy
-        Yn = Y[1:,1:]
-        Y0 = Y[1:,0]
-        V  = 1j*np.ones((NumN,))
-        er = 1.0
-        while er>1E-8:
-            V[1:] = np.linalg.solve(Yn,np.conj(s[1:]/V[1:])-Y0*V[0])
-            In = Y@V
-            sc = V*np.conj(In)
-            er = np.linalg.norm(s[1:]-sc[1:])
-            
-        self.NumN = NumN  # Numbe of nodes
-        self.NumL = NumL  # Number of lines
-        self.NumD = NumD  # Number of loads
-        self.NumC = NumC  # Number of converters
-        self.lines = mg
-        self.demandP = DemandP
-        self.demandL = DemandL
-        self.demandType = DemandType
-        self.converters = Converters
-        self.Ybus = Y
-        self.V = V
-        self.A = A
-        self.zlin = zlin
-        self.Yd = Yd
-        self.Yc = Yc
-        self.MC = lambda:0 # Easy way to create an object
-        self.MC.nd = 100 # Number of samples by default
-        self.savename = 'data'
-        self.path = ''
-        self.npar = 5
-
-    def microgrid1(self):
+        self.Converters = np.array([[11,30000,0.05,0.04,0.32E-3,solar,beta,900,40],
+                            [12,10000,0.08,0.09,0.38E-3,solar,beta,900,40],
+                            [13,10000,0.10,0.09,0.41E-3,wind,weibull,11,1.2],
+                            [17,30000,0.09,0.10,0.31E-3,solar,beta,900,40],
+                            [18,10000,0.08,0.08,0.34E-3,wind,weibull,11,1.2]])
+        
+    def mg2(self): #Meshed MG
         '''
         A Benchmark Test System for Networked Microgrids
         '''
-        Vnom = 11000 # Line to Line voltage in volts
-        wnom = 2.*np.pi*50. # Nominal angular velocity
-        Pnom = 10000 # Nominal power in watts
+        self.Vnom = 11000.0 # Line to Line voltage in volts
+        self.wnom = 2.*np.pi*50. # Nominal angular velocity
+        self.Pnom = 10000.0 # Nominal power in watts
 
-        Lines = np.array([[0,1,3000,0],
+        self.Lines = np.array([[0,1,3000,0],
                         [1,2,3000,0],	
                         [1,3,2400,1],
                         [1,4,3000,0],
@@ -214,54 +146,62 @@ class mgrid(object):
                         [3,6,1200,5],
                         [4,6,1500,4]])
 
-        Impedances = np.array([[0.0309,0.05962,1.136,0.417,0.0], #(0)
+        self.Impedances = np.array([[0.0309,0.05962,1.136,0.417,0.0], #(0)
                             [0.0389,0.04995,13.64,0.472,0.0], #(1)
                             [0.0389,0.04995,5.520,0.418,0.0], #(2)
                             [0.0389,0.04995,3.480,0.409,0.0], #(3)
                             [0.0389,0.04995,3.480,0.409,0.0], #(4)
                             [0.0389,0.04995,3.480,0.409,0.0]]) #(5)
 
-        DemandL = np.array([2,3,4,5,6,5])
-        DemandP = np.array([2125.0,3329.0,2050.0,1257.0,1056.0,100.0])/10.0
+        self.DemandL = np.array([2,3,4,5,6])
+        self.DemandP = np.array([2125.0,3329.0,2050.0,10.0,1056.0])
 
         #DemandL = np.array([2,3,4,5,6])
         #DemandP = np.array([2125.0, 3329.0, 2050.0, 1257.0, 1056.0, 100.0])/10.0
         #node number, type 0:normal 1:EV, params
         #node 6 ev (5 en python)
-        DemandType = np.array([0,0,0,0,0,1])
+        self.DemandType = np.array([0,0,0,1,0])
         #Typer of source 
         solar = 1.0
-        wind = 2.0
+        #wind = 2.0
         #Type of distribution
-        weibull = 1.0
+        #weibull = 1.0
         beta = 2.0
-        normal = 3.0
-        #Converters = np.array([[2,2000,0.08,0.09,0.38E-3,solar,normal,900,40],
-		#                [3,2400,0.10,0.09,0.41E-3,solar,normal,11,1.2],
-        #                [4,2000,0.09,0.10,0.31E-3,solar,normal,900,40]])
-        
-        Converters = np.array([[2,Pnom,0.08,0.09,0.38E-3,solar,beta,900,40],
-                        [3,Pnom,0.10,0.09,0.41E-3,solar,beta,11,1.2],
-                        [4,Pnom,0.09,0.10,0.31E-3,solar,beta,900,40]])
-        
-        #Organizar la estructura
-        NumN = np.max([np.max(Lines[:,0]),np.max(Lines[:,1])])+1
-        NumL = np.size(Lines[:,0])
-        NumD = np.size(DemandL) 
-        NumC = np.size(Converters[:,0])
-        Zbase = Vnom*Vnom/Pnom
-        Y = 1j*np.zeros((NumN,NumN))
-        Yc = 1j*np.zeros((NumN,1))
-        mg = 1j*np.zeros((NumL,4))
-        zlin = 1j*np.zeros((NumL,1))
-        A = np.zeros((NumL,NumN))
-        for k in range(NumL):
-            n1 = Lines[k,0]
-            n2 = Lines[k,1]
-            t = Lines[k,3]
-            z = (Impedances[t,0]+1j*Impedances[t,1])/1000/Zbase*Lines[k,2]
-            b = 1j*Impedances[t,4]*wnom/1000*Lines[k,2]*Zbase*1E-6
-            mg[k,0:4] = np.array([n1,n2,z,b])
+        #normal = 3.0
+        #Converters = np.array([[2,Pnom,0.08,0.09,0.38E-3,solar,beta,900,40],
+        #                [3,Pnom,0.10,0.09,0.41E-3,solar,beta,11,1.2],
+        #                [4,Pnom,0.09,0.10,0.31E-3,solar,beta,900,40]])
+
+        self.Converters = np.array([[2,2000,0.08,0.09,0.38E-3,solar,beta,900,40],
+                            [3,2400,0.10,0.09,0.41E-3,solar,beta,900,40],
+                            [4,2000,0.09,0.10,0.31E-3,solar,beta,900,40]])
+
+    def mg3(self): #Modified Cigre with EV and new Vnom
+        self.mg1()
+        self.Vnom = 800.0
+        self.DemandType = np.array([1,0,0,0,0])
+        self.initilizeMG()
+
+    def initilizeMG(self):
+        #Structure organization
+        self.NumN = np.max([np.max(self.Lines[:,0]),np.max(self.Lines[:,1])])+1 # Numbe of nodes
+        self.NumL = self.Lines.shape[0] # Number of lines
+        self.NumD = self.DemandL.shape[0] # Number of loads
+        self.NumC = self.Converters.shape[0] # Number of converters
+        Zbase = self.Vnom*self.Vnom/self.Pnom
+        print(Zbase)
+        Y = 1j*np.zeros((self.NumN, self.NumN))
+        Yc = 1j*np.zeros((self.NumN, 1))
+        #mg = 1j*np.zeros((self.NumL, 4))
+        zlin = 1j*np.zeros((self.NumL, 1))
+        A = np.zeros((self.NumL, self.NumN))
+        for k in range(self.NumL):
+            n1 = self.Lines[k,0]
+            n2 = self.Lines[k,1]
+            t = self.Lines[k,3]
+            z = (self.Impedances[t,0]+1j*self.Impedances[t,1])/1000/Zbase*self.Lines[k,2]
+            b = 1j*self.Impedances[t,4]*self.wnom/1000*self.Lines[k,2]*Zbase*1E-6
+            #mg[k,0:4] = np.array([n1,n2,z,b])
             Y[n1,n1] = Y[n1,n1] + 1.0/z + b
             Y[n1,n2] = Y[n1,n2] - 1.0/z
             Y[n2,n1] = Y[n2,n1] - 1.0/z
@@ -273,50 +213,43 @@ class mgrid(object):
             Yc[n2] = Yc[n2] + b
             
         # Include the demand as constant impedances
-        DemandP = DemandP/Pnom
-        Yd = 1j*np.zeros((NumN,1))
-        for k in range(NumD):
-            n1 = np.int32(DemandL[k])
-            g = DemandP[k]
+        self.DemandP = self.DemandP/self.Pnom
+        Yd = np.zeros((self.NumN, 1))+0j
+        for k in range(self.NumD):
+            n1 = np.int32(self.DemandL[k])
+            if self.DemandType[k]:
+                g = EV_Demand(10.0)/self.Pnom
+            else:
+                g = self.DemandP[k]
             Y[n1,n1] = Y[n1,n1] + g
             Yd[n1] = Yd[n1] + g
             
         # Load flow in grid mode
-        Converters[:,1] = Converters[:,1]/Pnom
-        s = np.zeros((NumN,))
-        for k in range(NumC):
-            n1 = np.int32(Converters[k,0])
-            s[n1] = Converters[k,1]
-            
+        self.Converters[:,1] = self.Converters[:,1]/self.Pnom
+        '''
+        s = np.zeros((self.NumN,))
+        #for k in range(self.NumC):
+        n1 = np.int_(self.Converters[:,0]) #node
+        s[n1] = self.Converters[:,1].copy()
+
         # Yn = csr_matrix(Y[1:,1:]) #Using scipy
         Yn = Y[1:,1:]
         Y0 = Y[1:,0]
-        V  = 1j*np.ones((NumN,))
+        V  = 1j*np.ones((self.NumN,))
         er = 1.0
-        while er>1E-8:
+        while (er>1E-8):
             V[1:] = np.linalg.solve(Yn,np.conj(s[1:]/V[1:])-Y0*V[0])
             In = Y@V
             sc = V*np.conj(In)
             er = np.linalg.norm(s[1:]-sc[1:])
-            
-        self.NumN = NumN  # Numbe of nodes
-        self.NumL = NumL  # Number of lines
-        self.NumD = NumD  # Number of loads
-        self.NumC = NumC  # Number of converters
-        self.lines = mg
-        self.demandP = DemandP
-        self.demandL = DemandL
-        self.demandType = DemandType
-        self.converters = Converters
-        self.Ybus = Y
-        self.V = V
+        '''
+        #self.lines = mg
+        #self.Ybus = Y
+        #self.V = V
         self.A = A
         self.zlin = zlin
         self.Yd = Yd
         self.Yc = Yc
-        self.MC = lambda:0 # Easy way to create an object
-        self.MC.nd = 100 # Number of samples by default
-        self.npar = 3
 
     def Newton_Freq(self, convs, iterations=50):
         # initialization
@@ -390,58 +323,66 @@ class mgrid(object):
         #print('Eigs: ',np.real(np.linalg.eigvals(Jac))<0.0)
         Vl = -np.linalg.solve(Yb[np.ix_(S, S)],Yb[np.ix_(S, N)]@Vs)
         Il = Yb[np.ix_(S, N)]@Vs + Yb[np.ix_(S, S)]@Vl
-        Vt = np.vstack((Vs,Vl))
-        It = np.vstack((I,Il))
+        Vt = np.zeros((self.NumN,1))+0j
+        Vt[N] = Vs
+        Vt[S] = Vl
+        It = np.zeros((self.NumN,1))+0j
+        It[N] = I
+        It[S] = Il
+        #print(np.max(Vt),np.max(It))
         Pt = np.real(Vt*np.conj(It))
-        if np.sum(Pt)<0:
+        if np.sum(Pt)<0.:
             print('Negative power loss!')
             #print('w',w)
             #print('Vt', Vt)
             #print('It', It)
-            #print('Pt', Pt)
+            print('Pt', Pt)
+            print('Conv',convs[:,1])
 
         return w,Vt,P,Q,I,np.sum(Pt)
     
-    def Montecarlo(self,xi,zita, graficar=False, flagres=False, savedata=False, flagseed=False, seed =0):
+    def Montecarlo(self,xi,zita, scales = None, makefig=False, flagres=False, savedata=False, flagseed=False, saturate = False, seed =0):
         #flagres para incluir MAE de la frecuencia en la funcion objetivo
         # Frequency variation given by p and q
         nd = self.MC.nd  # Monte Carlo number of iterations
+        if scales is None:
+            scales = np.ones((7,))
+
         w = np.zeros((nd,1)) #Newton
         dp = np.zeros((nd,1))
         dv = np.zeros((nd,2))
         Vnodes = np.zeros((nd,self.NumN))
         imax = np.zeros((nd,1))
         dpq = np.zeros((nd,2)) # caching the diference between p_ref and p
-        convs = self.converters.copy()
+        convs = self.Converters.copy()
         convs[:,2] = xi.copy()
         convs[:,3] = zita.copy()
         solar = 1.0
         wind = 2.0
-        EV = 3.0
         #demand = self.demand.copy()
         if flagseed:
             np.random.seed(seed)
         for k in range(nd):
             #demand[:,1]= self.demand[:,1]*np.random.rand(self.NumD)*10  # Demands are uniform distributed
-            Yd = 1j*np.zeros((self.NumN,1))
+            Yd = np.zeros((self.NumN,1)) + 0j
             for n in range(self.NumD):
-                n1 = np.int32(self.demandL[n]) #node number
-                if self.demandType[n]:
-                    g = EV_Demand(10.0)
+                n1 = np.int32(self.DemandL[n]) #node number
+                if self.DemandType[n]:
+                    g = EV_Demand(5.0)/(self.Pnom) #in PU for EV
                 else:
-                    g = self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
+                    g = self.DemandP[n] + 0.05*self.DemandP[n]*np.random.randn()  # Demand value
                 Yd[n1] += g
             self.Yd = Yd.copy()
             
             for c in range(self.NumC):
-                Pnom = self.converters[c,1]
-                dist = self.converters[c,6]
-                K1 = self.converters[c,7]
-                K2 = self.converters[c,8]
-                if (self.converters[c,5] == solar):
+                Pnom = self.Converters[c,1]
+                dist = self.Converters[c,6]
+                K1 = self.Converters[c,7]
+                K2 = self.Converters[c,8]
+                if (self.Converters[c,5] == solar):
                     convs[c,1] = Solar_Sce(Pnom,dist,K1,K2)
                     
-                if (self.converters[c,5] == wind):
+                if (self.Converters[c,5] == wind):
                     convs[c,1] = Wind_Sce(Pnom,dist,K1,K2)
 
             w[k],v,p,q,i,dp[k] = self.Newton_Freq(convs)
@@ -452,14 +393,8 @@ class mgrid(object):
             dpq[k,0] = np.max(np.abs(p[:,0]-convs[:,1]))
             dpq[k,1] = np.max(np.abs(q))
             Vnodes[k,:] = np.abs(v).reshape(-1,)
-        #mae = self.dynamic_sim(convs, nd=100)
-        #print(mae)
-        #if np.isnan(mae):
-        #    mae = 1.0
-        #else:
-        #    mae /= 520.0
 
-        if graficar:
+        if makefig:
             fig01 = plt.figure()
             ax01 = fig01.add_subplot(1, 1, 1) 
             plt.hist(w,30)
@@ -498,13 +433,13 @@ class mgrid(object):
             fig06 = plt.figure()
             ax06 = fig06.add_subplot(1, 1, 1) 
             plt.hist(dp,30)
-            ax04.grid()
-            ax04.set_title('Losses')
+            ax06.grid()
+            ax06.set_title('Losses')
 
-            #fig01.savefig(self.path+'omega.pdf',dpi=200)
-            #fig02.savefig(self.path+'dpq.pdf',dpi=200)
-            #fig03.savefig(self.path+'dv.pdf',dpi=200)
-            #fig04.savefig(self.path+'imax.pdf',dpi=200)
+            fig01.savefig(self.path+'omega.pdf',dpi=200)
+            fig02.savefig(self.path+'dpq.pdf',dpi=200)
+            fig03.savefig(self.path+'dv.pdf',dpi=200)
+            fig04.savefig(self.path+'imax.pdf',dpi=200)
             fig05.savefig(self.path+'Vnodes.pdf',dpi=200)
             fig06.savefig(self.path+'losses.pdf',dpi=200)
         
@@ -512,36 +447,6 @@ class mgrid(object):
             np.savez(self.savename,w=w,dp=dp,dv=dv,dpq=dpq,imax=imax,
                      params=np.concatenate((xi, zita)))
 
-        '''
-        # results on w
-        self.MC.mu_w = np.mean(w)
-        self.MC.sigma_w = np.std(w)
-    
-        a = np.where(w>1.05)
-        self.MC.var_pos_w = np.size(a)/nd
-    
-        a = np.where(w<0.95)
-        self.MC.var_neg_w = np.size(a)/nd
-      
-        # results on vmax
-        a = np.where(dv[:,1]>1.05)
-        self.MC.var_pos_v = np.size(a)/nd
-    
-        # results on vmin
-        a = np.where(dv[:,0]<0.95)
-        self.MC.var_neg_v = np.size(a)/nd
-    
-        # results on delta_p  % deviations larger than 0.5
-        a = np.where(dpq[:,0]>0.5)
-        self.MC.var_dp = np.size(a)/nd
-    
-        # results on delta_q  % deviations larger than 0.5
-        a = np.where(dpq[:,1]>0.5)
-        self.MC.var_dq = np.size(a)/nd
-
-        self.resTol = self.MC.var_pos_w+self.MC.var_neg_w+self.MC.var_pos_v+\
-                      self.MC.var_neg_v+self.MC.var_dq+self.MC.var_dp 
-        '''
         optmetrics = np.zeros((8,))
         # Variance minimization 
         optmetrics[0] = np.sum(dp**2)/(nd-1) #Power losses around 0
@@ -552,24 +457,13 @@ class mgrid(object):
         optmetrics[5] = np.sum(dpq[:,1]**2)/(nd-1) #dq around 0
         optmetrics[6] = np.sum(imax**2)/(nd-1) #imax around 0
         #optmetrics[7] = mae
-        self.resDev =  np.sum(optmetrics)
+        self.resDev =  np.sum(optmetrics[:7])
+        print(self.resDev)
         optmetrics[7] = np.mean(dp)
         self.optmetrics = optmetrics
         
-        if np.isnan(self.resDev):
+        if np.isnan(self.resDev) or (self.resDev>10.0 and saturate):
             self.resDev = 10.0
-                 
-    def updateYd(self, seed):
-        np.random.seed(seed)
-        Yd = 1j*np.zeros((self.NumN,1))
-        for n in range(self.NumD):
-            n1 = np.int32(self.demandL[n]) #node number
-            if self.demandType[n]:
-                g = EV_Demand(10.0)
-            else:
-                g = self.demandP[n] + 0.05*self.demandP[n]*np.random.randn()  # Demand value
-            Yd[n1] = Yd[n1] + g
-        self.Yd = Yd
         
     def dynamic_sim(self, convs, dt=5e-5, fp=0.7, nd = 10, pw_flag=False):
         
@@ -647,28 +541,43 @@ class mgrid(object):
 
 
 if __name__ == "__main__":
-
     mg = mgrid()
-    mg.microgrid1()
+    mg.mg3()
+    mg.initilizeMG()
+    mg.MC.nd = np.int32(500) #Sample Size
+    npar = mg.NumC
+    nsets = 100
+    bounds = np.array([1e-7,0.15])*np.ones((2*npar,2))
+    np.random.seed(0)
+    X = (bounds[:,1]-bounds[:,0])*np.random.rand(nsets,2*npar)+bounds[:,0]
+    #row = 52
+    #print(X[row,:])
+    #xi = X[row,:npar]
+    #zita = X[row,npar:]
 
-    npar = mg.npar
-    np.random.seed(2)
     xi = np.random.rand(npar)*0.15
     zita = np.random.rand(npar)*0.15
-      
-    BestSol = np.load('ResultsSize500/BO_mg2_EI_BestSol.npy')
-    BestVal = np.load('ResultsSize500/BO_mg2_EI_BestVal.npy')
-    indMin = np.argmin(BestVal)
-    xi = BestSol[indMin,:npar]
-    zita = BestSol[indMin,npar:]
-    
-    mg.MC.nd = np.int32(500) #Sample Size
-    mg.Montecarlo(xi, zita, graficar=True)
-    mg.converters[:,2] = xi
-    mg.converters[:,3] = zita
+    #xi = np.array([0.00040558,0.09707953,0.09005888,0.08831098,0.14441555]) 
+    #zita = np.array([0.00253085,0.10447239,0.12205182,0.07647113,0.0500948])
 
-    #print(mg.optmetrics)
+    #mg1 worst sample for Vnom = 400
+    #xi = np.array([0.00040558, 0.09707953, 0.09005888, 0.08831098, 0.14441555]) 
+    #zita = np.array([0.00253085,  0.10447239, 0.12205182, 0.07647113, 0.0500948])
+
+    #BestSol = np.load('ResultsSize500/GA_mg3_BestSol.npy')
+    #BestVal = np.load('ResultsSize500/GA_mg3_BestVal.npy')
+    #indMin = np.argmin(BestVal)
+    #xi = BestSol[indMin,:npar]
+    #zita = BestSol[indMin,npar:]
+    
+    #scales = np.array([2.372127,8.370188e-4,0.003252,0.004098,2.462032,6.179947,9.559357])
+    scales = np.ones((7,))
+    mg.Converters[:,2] = xi
+    mg.Converters[:,3] = zita
+    mg.Montecarlo(xi, zita, makefig=True)
+
+    print(mg.optmetrics)
     #print(mg.resDev)
-    #mae = mg.dynamic_sim(mg.converters, nd = 100, pw_flag=True)
+    #mae = mg.dynamic_sim(mg.Converters, nd = 100, pw_flag=True)
     #print(mae)
-    #print(mg.Newton_Freq(mg.converters))
+    #print(mg.Newton_Freq(mg.Converters))
